@@ -1,0 +1,104 @@
+## ── .NET / C# build artifacts ─────────────────────────────────────────────────
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.dbmdl
+*.dbproj.schemaview
+*.jfm
+*.pfx
+*.publishsettings
+*.pubxml.user
+orleans.codegen.cs
+
+# Test artifacts
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+coverage*.json
+coverage*.xml
+coverage*.info
+*.coverage
+*.coveragexml
+
+# Roslyn cache
+*.cache
+*.tlog
+*.log
+*.vs/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!src/**/packages/
+!tests/**/packages/
+
+## ── EF Core ───────────────────────────────────────────────────────────────────
+# Zachowujemy Migrations/ w repo (to część kodu), ale pomijamy artefakty
+Migrations/*.Designer.cs.bak
+
+## ── Medytao specific ──────────────────────────────────────────────────────────
+# Uploadowane pliki audio/tekst użytkowników (lokalny storage)
+uploads/
+src/Medytao.Api/uploads/
+src/Medytao.Api/bin/Debug/net9.0/uploads/
+
+# Lokalna baza SQL Server LocalDB (gdyby ktoś eksportował .mdf)
+*.mdf
+*.ldf
+*.ndf
+
+# Sekrety developerskie (JWT secret, connection stringi z prawdziwymi hasłami)
+# Plik appsettings.Development.json zostawiamy (ma dev-safe defaulty),
+# ale jakby kiedyś był .Local lub .Secret — ignoruj
+appsettings.Local.json
+appsettings.*.Local.json
+secrets.json
+.env
+.env.local
+
+## ── Blazor WebAssembly ────────────────────────────────────────────────────────
+wwwroot/_framework/
+wwwroot/service-worker-assets.js
+
+## ── IDE: Visual Studio / Rider / VS Code ──────────────────────────────────────
+.vs/
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+## ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+## ── Logi ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+Logs/
+
+## ── Paczki ZIP (były potrzebne, nie są już w repo) ────────────────────────────
+Medytao-v*.zip
+MeditationBuilder-v*.zip
+
+## ── Tymczasowe / scratch ──────────────────────────────────────────────────────
+*.tmp
+*.bak
+*~
+scratch/
+TODO.local.md
