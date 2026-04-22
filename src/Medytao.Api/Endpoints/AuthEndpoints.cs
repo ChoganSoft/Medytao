@@ -16,6 +16,7 @@ public static class AuthEndpoints
 
         group.MapPost("/register", async (RegisterRequest req, IUserRepository users, IUnitOfWork uow, IConfiguration cfg) =>
         {
+            
             if (await users.GetByEmailAsync(req.Email) is not null)
                 return Results.Conflict("Email already registered.");
 
