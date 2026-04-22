@@ -37,6 +37,15 @@ window.medytaoAudio = {
         document.querySelectorAll('audio').forEach(a => {
             try { a.pause(); } catch { }
         });
+    },
+
+    getProgress(audioEl) {
+        if (!audioEl) return null;
+        const d = audioEl.duration;
+        return {
+            currentTime: audioEl.currentTime || 0,
+            duration: (isFinite(d) && d > 0) ? d : 0
+        };
     }
 };
 
@@ -146,6 +155,7 @@ window.meditationPlayer = window.medytaoAudio;
                         ? 1
                         : Math.max(1, firstTrack.loopCount || 1);
                     return {
+                        layerId: l.id,
                         layerVolume: l.volume,
                         muted: !!l.muted,
                         tracks: l.tracks,
@@ -171,6 +181,24 @@ window.meditationPlayer = window.medytaoAudio;
                 state.audio = null;
             }
             sessions.delete(sessionId);
+        },
+
+        getProgress(sessionId) {
+            const s = sessions.get(sessionId);
+            if (!s) return [];
+            return s.layers.map((state, i) => {
+                const a = state.audio;
+                const d = a ? a.duration : 0;
+                return {
+                    layerIndex: i,
+                    layerId: state.layerId,
+                    trackIndex: state.index,
+                    trackCount: state.tracks.length,
+                    currentTime: a ? (a.currentTime || 0) : 0,
+                    duration: (a && isFinite(d) && d > 0) ? d : 0,
+                    finished: state.index >= state.tracks.length
+                };
+            });
         },
 
         // Debug helper — not used by Blazor.

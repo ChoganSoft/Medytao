@@ -1,19 +1,31 @@
 @* Przycisk Play/Pause dla pojedynczego pliku audio.
-   Używa natywnego <audio> + helperów w window.medytaoAudio. *@
+   Używa natywnego <audio> + helperów w window.medytaoAudio.
+   Podczas odtwarzania pokazuje cienki pasek postępu pod przyciskiem. *@
 
-<button class="audio-preview-btn @(_playing ? "playing" : "")"
-        @onclick:stopPropagation="true"
-        @onclick="Toggle"
-        title="@(_playing ? "Pause" : "Preview")">
+@implements IAsyncDisposable
+
+<span class="audio-preview-wrap">
+    <button class="audio-preview-btn @(_playing ? "playing" : "")"
+            @onclick:stopPropagation="true"
+            @onclick="Toggle"
+            title="@(_playing ? "Pause" : "Preview")">
+        @if (_playing)
+        {
+            <span>◼</span>
+        }
+        else
+        {
+            <span>▶</span>
+        }
+    </button>
+
     @if (_playing)
     {
-        <span>◼</span>
+        <span class="audio-preview-progress">
+            <span class="audio-preview-progress-fill" style="@ProgressStyle"></span>
+        </span>
     }
-    else
-    {
-        <span>▶</span>
-    }
-</button>
+</span>
 
 <audio @ref="_audioRef" src="@Url" preload="none" @onended="HandleEnded"></audio>
 
@@ -24,12 +36,22 @@
 
     private ElementReference _audioRef;
     private bool _playing;
+    private double _currentTime;
+    private double _duration;
+    private System.Timers.Timer? _progressTimer;
+
+    private double ProgressPercent =>
+        _duration > 0 ? Math.Clamp(_currentTime / _duration * 100.0, 0, 100) : 0;
+
+    private string ProgressStyle =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"width: {ProgressPercent:0.##}%");
 
     private async Task Toggle()
     {
         if (_playing)
         {
             await JS.InvokeVoidAsync("medytaoAudio.pause", _audioRef);
+            StopProgressTimer();
             _playing = false;
         }
         else
@@ -38,13 +60,71 @@
             await JS.InvokeVoidAsync("medytaoAudio.pauseAll");
             await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef);
             _playing = true;
+            StartProgressTimer();
         }
     }
 
-    private void HandleEnded() => _playing = false;
+    private void HandleEnded()
+    {
+        _playing = false;
+        _currentTime = 0;
+        StopProgressTimer();
+    }
+
+    private void StartProgressTimer()
+    {
+        StopProgressTimer();
+        _progressTimer = new System.Timers.Timer(200) { AutoReset = true };
+        _progressTimer.Elapsed += OnProgressTick;
+        _progressTimer.Start();
+    }
+
+    private void StopProgressTimer()
+    {
+        if (_progressTimer is null) return;
+        _progressTimer.Elapsed -= OnProgressTick;
+        _progressTimer.Stop();
+        _progressTimer.Dispose();
+        _progressTimer = null;
+    }
+
+    private async void OnProgressTick(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        try
+        {
+            var p = await JS.InvokeAsync<ProgressDto?>("medytaoAudio.getProgress", _audioRef);
+            if (p is null) return;
+            _currentTime = p.currentTime;
+            _duration = p.duration;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // Komponent może być już zdisposowany.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopProgressTimer();
+        if (_playing)
+        {
+            try { await JS.InvokeVoidAsync("medytaoAudio.pause", _audioRef); } catch { }
+        }
+    }
+
+    private sealed record ProgressDto(double currentTime, double duration);
 }
 
 <style>
+    .audio-preview-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+    }
     .audio-preview-btn {
         background: none;
         border: 1px solid var(--color-border-secondary);
@@ -65,5 +145,21 @@
         background: var(--color-text-info);
         color: var(--color-background-primary);
         border-color: var(--color-text-info);
+    }
+    .audio-preview-progress {
+        position: absolute;
+        left: 0; right: 0;
+        bottom: -6px;
+        height: 2px;
+        background: var(--color-border-tertiary);
+        border-radius: 1px;
+        overflow: hidden;
+        pointer-events: none;
+    }
+    .audio-preview-progress-fill {
+        display: block;
+        height: 100%;
+        background: var(--color-text-info);
+        transition: width 0.18s linear;
     }
 </style>

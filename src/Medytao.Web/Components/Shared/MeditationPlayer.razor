@@ -29,6 +29,7 @@
                 @foreach (var layer in Meditation.Layers.OrderBy(l => l.Type))
                 {
                     var trackCount = layer.Tracks.Count();
+                    var progress = GetLayerProgress(layer.Id);
                     <div class="player-layer @(layer.Muted ? "muted" : "")">
                         <span class="player-layer-icon">@LayerIcon(layer.Type)</span>
                         <div class="player-layer-info">
@@ -38,11 +39,25 @@
                                 {
                                     <span class="no-track">No tracks</span>
                                 }
+                                else if (progress is not null && !progress.Finished)
+                                {
+                                    <span>Track @(progress.TrackIndex + 1)/@progress.TrackCount · @FormatTime(progress.CurrentTime) / @FormatTime(progress.Duration)</span>
+                                }
+                                else if (progress is not null && progress.Finished)
+                                {
+                                    <span>Finished</span>
+                                }
                                 else
                                 {
                                     <span>@trackCount track@(trackCount == 1 ? "" : "s") in sequence</span>
                                 }
                             </div>
+                            @if (trackCount > 0 && _playing)
+                            {
+                                <div class="player-layer-progress">
+                                    <div class="player-layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
+                                </div>
+                            }
                         </div>
                         <div class="player-layer-meta">
                             Vol @((int)(layer.Volume * 100))%
@@ -68,9 +83,31 @@
 
     private bool _playing;
     private string? _sessionId;
+    private System.Timers.Timer? _progressTimer;
+    private Dictionary<Guid, LayerProgress> _progressByLayer = new();
 
     private int ActiveLayerCount =>
         Meditation.Layers.Count(l => l.Tracks.Any() && !l.Muted);
+
+    private LayerProgress? GetLayerProgress(Guid layerId) =>
+        _progressByLayer.TryGetValue(layerId, out var p) ? p : null;
+
+    private static string LayerProgressStyle(LayerProgress? p)
+    {
+        var pct = (p is not null && p.Duration > 0)
+            ? Math.Clamp(p.CurrentTime / p.Duration * 100.0, 0, 100)
+            : 0;
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"width: {pct:0.##}%");
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        if (!double.IsFinite(seconds) || seconds < 0) seconds = 0;
+        var total = (int)Math.Floor(seconds);
+        var m = total / 60;
+        var s = total % 60;
+        return $"{m}:{s:00}";
+    }
 
     private async Task TogglePlay()
     {
@@ -98,16 +135,19 @@
 
         _sessionId = await JS.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers);
         _playing = true;
+        StartProgressTimer();
     }
 
     private async Task StopAll()
     {
+        StopProgressTimer();
         if (_sessionId is not null)
         {
             await JS.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId);
             _sessionId = null;
         }
         _playing = false;
+        _progressByLayer.Clear();
     }
 
     private async Task HandleClose()
@@ -116,8 +156,48 @@
         await OnClose.InvokeAsync();
     }
 
+    private void StartProgressTimer()
+    {
+        StopProgressTimer();
+        _progressTimer = new System.Timers.Timer(250) { AutoReset = true };
+        _progressTimer.Elapsed += OnProgressTick;
+        _progressTimer.Start();
+    }
+
+    private void StopProgressTimer()
+    {
+        if (_progressTimer is null) return;
+        _progressTimer.Elapsed -= OnProgressTick;
+        _progressTimer.Stop();
+        _progressTimer.Dispose();
+        _progressTimer = null;
+    }
+
+    private async void OnProgressTick(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        var sid = _sessionId;
+        if (sid is null) return;
+        try
+        {
+            var items = await JS.InvokeAsync<LayerProgress[]>("medytaoPlayer.getProgress", sid);
+            if (items is null) return;
+            var map = new Dictionary<Guid, LayerProgress>(items.Length);
+            foreach (var p in items)
+            {
+                if (p.LayerId != Guid.Empty) map[p.LayerId] = p;
+            }
+            _progressByLayer = map;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // Komponent może być już zdisposowany lub sesja zakończona.
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        StopProgressTimer();
         if (_sessionId is not null)
         {
             try { await JS.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId); } catch { }
@@ -133,6 +213,17 @@
         "Fx"     => "✦",
         _        => "○"
     };
+
+    private sealed class LayerProgress
+    {
+        public int LayerIndex { get; set; }
+        public Guid LayerId { get; set; }
+        public int TrackIndex { get; set; }
+        public int TrackCount { get; set; }
+        public double CurrentTime { get; set; }
+        public double Duration { get; set; }
+        public bool Finished { get; set; }
+    }
 }
 
 <style>
@@ -182,6 +273,19 @@
     .player-layer-track { font-size: 11px; color: var(--color-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .player-layer-track .no-track { font-style: italic; }
     .player-layer-meta { font-size: 11px; color: var(--color-text-tertiary); white-space: nowrap; }
+
+    .player-layer-progress {
+        margin-top: 6px;
+        height: 3px;
+        background: var(--color-border-tertiary);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .player-layer-progress-fill {
+        height: 100%;
+        background: var(--color-text-info);
+        transition: width 0.2s linear;
+    }
 
     .player-hint {
         padding: 12px 24px; margin: 0;
