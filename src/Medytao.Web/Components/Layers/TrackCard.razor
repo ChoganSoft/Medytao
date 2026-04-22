@@ -111,6 +111,7 @@
     {
         _volume = v;
         await PersistAsync();
+        await OnChanged.InvokeAsync();
     }
 
     private async Task OnLoopCountChange(int n)
