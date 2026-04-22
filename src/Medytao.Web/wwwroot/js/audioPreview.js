@@ -56,10 +56,14 @@ window.meditationPlayer = window.medytaoAudio;
 // Sesja playbacku. Każda warstwa gra sekwencyjnie, warstwy grają równolegle.
 //
 // startSession(layers) → sessionId
-//   layers: [{ id, volume, muted, tracks: [{ url, volume, loopCount }] }]
+//   layers: [{ id, volume, muted, tracks: [{ trackId, url, volume, loopCount }] }]
 //   loopCount: 0 = loop forever (blocks next tracks), N = play N times.
 //
 // stopSession(sessionId) — zatrzymuje i zwalnia wszystkie <audio>.
+// setLayerVolume(sessionId, layerId, volume) — zmienia głośność warstwy w czasie rzeczywistym.
+// setLayerMuted(sessionId, layerId, muted) — wycisza / przywraca warstwę.
+// setTrackVolume(sessionId, layerId, trackId, volume) — zmienia głośność tracka (stosuje się
+//   od razu, jeśli ten track jest akurat odtwarzany w swojej warstwie).
 
 (function () {
     const sessions = new Map(); // sessionId → { layers: [LayerState] }
@@ -201,7 +205,54 @@ window.meditationPlayer = window.medytaoAudio;
             });
         },
 
+        // Real-time głośność warstwy. Jeżeli coś w warstwie gra, zmieniamy
+        // od razu głośność aktywnego <audio>.
+        setLayerVolume(sessionId, layerId, volume) {
+            const L = findLayer(sessionId, layerId);
+            if (!L) return;
+            L.layerVolume = clamp01(volume);
+            applyCurrentVolume(L);
+        },
+
+        // Wycisz / odcisz warstwę. Nie zatrzymujemy <audio> — tylko ściągamy
+        // głośność do 0, żeby synchronizacja z innymi warstwami się nie rozjechała.
+        setLayerMuted(sessionId, layerId, muted) {
+            const L = findLayer(sessionId, layerId);
+            if (!L) return;
+            L.muted = !!muted;
+            applyCurrentVolume(L);
+        },
+
+        // Real-time głośność pojedynczego tracka. Mutujemy wpis w state.tracks —
+        // nawet jeżeli track jeszcze nie leci, następne wywołanie playCurrent
+        // zobaczy nową wartość.
+        setTrackVolume(sessionId, layerId, trackId, volume) {
+            const L = findLayer(sessionId, layerId);
+            if (!L) return;
+            const t = L.tracks.find(x => x && x.trackId === trackId);
+            if (!t) return;
+            t.volume = clamp01(volume);
+            if (L.tracks[L.index] === t) applyCurrentVolume(L);
+        },
+
         // Debug helper — not used by Blazor.
         _sessions: sessions
     };
+
+    function findLayer(sessionId, layerId) {
+        const s = sessions.get(sessionId);
+        if (!s) return null;
+        return s.layers.find(L => L.layerId === layerId) || null;
+    }
+
+    function applyCurrentVolume(L) {
+        if (!L.audio) return;
+        const track = L.tracks[L.index];
+        L.audio.volume = effectiveVolume(L.layerVolume, track ? track.volume : 1, L.muted);
+    }
+
+    function clamp01(v) {
+        if (typeof v !== 'number' || !isFinite(v)) return 0;
+        return Math.max(0, Math.min(1, v));
+    }
 })();

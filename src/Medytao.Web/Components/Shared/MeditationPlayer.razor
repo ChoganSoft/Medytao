@@ -4,6 +4,7 @@
    Logika sekwencji siedzi w window.medytaoPlayer (audioPreview.js). *@
 
 @implements IAsyncDisposable
+@inject PlaybackSessionService PlaybackSession
 
 @if (Open)
 {
@@ -127,6 +128,7 @@
                 muted = l.Muted,
                 tracks = l.Tracks.OrderBy(t => t.Order).Select(t => new
                 {
+                    trackId = t.Id,
                     url = t.Asset.Url,
                     volume = t.Volume,
                     loopCount = t.LoopCount
@@ -134,6 +136,7 @@
             }).ToArray();
 
         _sessionId = await JS.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers);
+        PlaybackSession.SetActiveSession(_sessionId);
         _playing = true;
         StartProgressTimer();
     }
@@ -146,6 +149,7 @@
             await JS.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId);
             _sessionId = null;
         }
+        PlaybackSession.ClearActiveSession();
         _playing = false;
         _progressByLayer.Clear();
     }
@@ -203,6 +207,7 @@
             try { await JS.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId); } catch { }
             _sessionId = null;
         }
+        PlaybackSession.ClearActiveSession();
     }
 
     private static string LayerIcon(string type) => type switch

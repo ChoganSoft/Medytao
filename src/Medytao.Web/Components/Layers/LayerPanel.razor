@@ -1,5 +1,6 @@
 @using Medytao.Shared.Models
 @inject MeditationService MeditationSvc
+@inject PlaybackSessionService PlaybackSession
 
 <div class="layer-panel @(Layer.Muted ? "muted" : "")">
     <!-- Layer header -->
@@ -60,13 +61,18 @@
 
     private async Task UpdateVolume(float volume)
     {
+        // Live-update najpierw, żeby user usłyszał różnicę natychmiast —
+        // persist do bazy i odświeżenie DTO mogą trochę zająć.
+        await PlaybackSession.SetLayerVolumeAsync(Layer.Id, volume);
         await MeditationSvc.UpdateLayerAsync(Layer.Id, volume, Layer.Muted);
         await OnLayerChanged.InvokeAsync();
     }
 
     private async Task ToggleMute()
     {
-        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, !Layer.Muted);
+        var newMuted = !Layer.Muted;
+        await PlaybackSession.SetLayerMutedAsync(Layer.Id, newMuted);
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, newMuted);
         await OnLayerChanged.InvokeAsync();
     }
 

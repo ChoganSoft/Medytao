@@ -1,5 +1,6 @@
 @using Medytao.Shared.Models
 @inject MeditationService MeditationSvc
+@inject PlaybackSessionService PlaybackSession
 
 <div class="track-card @(_expanded ? "expanded" : "")">
     <!-- Main row -->
@@ -110,6 +111,8 @@
     private async Task OnVolumeChange(float v)
     {
         _volume = v;
+        // Live-update grającej sesji zanim polecimy do bazy — user słyszy zmianę od razu.
+        await PlaybackSession.SetTrackVolumeAsync(LayerId, Track.Id, v);
         await PersistAsync();
         await OnChanged.InvokeAsync();
     }
