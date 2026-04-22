@@ -1,0 +1,173 @@
+@using Medytao.Shared.Models
+@inject AssetService AssetSvc
+
+<div class="modal-backdrop" @onclick="() => OnClose.InvokeAsync()">
+    <div class="picker-modal" @onclick:stopPropagation="true">
+        <div class="picker-header">
+            <h2>Asset library</h2>
+            <button class="close-btn" @onclick="() => OnClose.InvokeAsync()">×</button>
+        </div>
+
+        <div class="picker-toolbar">
+            <input class="search-input" placeholder="Search assets…" @bind="_search" @bind:event="oninput" />
+            <label class="upload-btn">
+                + Upload
+                <InputFile OnChange="HandleUpload" accept="audio/*,text/*" style="display:none" />
+            </label>
+        </div>
+
+        @if (_uploading)
+        {
+            <div class="upload-progress">Uploading…</div>
+        }
+
+        <div class="asset-list">
+            @foreach (var asset in Filtered)
+            {
+                <div class="asset-row @(_selected == asset.Id ? "selected" : "")"
+                     @onclick="() => _selected = asset.Id">
+                    <span class="asset-type-icon">@TypeIcon(asset.Type)</span>
+                    <div class="asset-info">
+                        <span class="asset-name">@asset.FileName</span>
+                        <span class="asset-meta">@asset.Type · @FormatSize(asset.SizeBytes)@(asset.DurationMs.HasValue ? $" · {FormatDuration(asset.DurationMs.Value)}" : "")</span>
+                    </div>
+                    @if (asset.Type == "Audio")
+                    {
+                        <AudioPreviewButton Url="@asset.Url" />
+                    }
+                    @if (_selected == asset.Id)
+                    {
+                        <span class="check">✓</span>
+                    }
+                </div>
+            }
+            @if (!Filtered.Any())
+            {
+                <div class="empty-assets">No assets found. Upload one to get started.</div>
+            }
+        </div>
+
+        <div class="picker-footer">
+            <button class="btn-secondary" @onclick="() => OnClose.InvokeAsync()">Cancel</button>
+            <button class="btn-primary" @onclick="Confirm" disabled="@(!_selected.HasValue)">Add to layer</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<Guid> OnPick { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<AssetDto> _assets = [];
+    private string _search = "";
+    private Guid? _selected;
+    private bool _uploading;
+
+    private IEnumerable<AssetDto> Filtered =>
+        string.IsNullOrWhiteSpace(_search)
+            ? _assets
+            : _assets.Where(a => a.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() =>
+        _assets = await AssetSvc.GetAllAsync() ?? [];
+
+    private async Task HandleUpload(InputFileChangeEventArgs e)
+    {
+        _uploading = true;
+        foreach (var file in e.GetMultipleFiles(5))
+        {
+            var type = file.ContentType.StartsWith("audio") ? "Audio" : "Text";
+            await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
+            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, type);
+            if (result is not null) _assets.Insert(0, result);
+        }
+        _uploading = false;
+    }
+
+    private async Task Confirm()
+    {
+        if (_selected.HasValue) await OnPick.InvokeAsync(_selected.Value);
+    }
+
+    private static string TypeIcon(string type) => type == "Audio" ? "♪" : "≡";
+    private static string FormatSize(long bytes) =>
+        bytes < 1024 * 1024 ? $"{bytes / 1024}KB" : $"{bytes / (1024 * 1024.0):F1}MB";
+    private static string FormatDuration(int ms) =>
+        $"{ms / 60000}:{(ms % 60000 / 1000):D2}";
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.45);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 200;
+    }
+    .picker-modal {
+        background: var(--color-background-primary);
+        border-radius: 12px; width: 520px; max-width: 95vw;
+        max-height: 80vh; display: flex; flex-direction: column;
+        overflow: hidden;
+    }
+    .picker-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 24px 16px;
+        border-bottom: 1px solid var(--color-border-tertiary);
+    }
+    .picker-header h2 { font-size: 18px; font-weight: 500; margin: 0; }
+    .close-btn { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
+
+    .picker-toolbar { display: flex; gap: 10px; padding: 14px 24px; border-bottom: 1px solid var(--color-border-tertiary); }
+    .search-input {
+        flex: 1; padding: 8px 12px; border-radius: 6px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary); font-size: 14px;
+    }
+    .upload-btn {
+        padding: 8px 14px; border-radius: 6px;
+        background: var(--color-background-tertiary);
+        border: 1px solid var(--color-border-secondary);
+        font-size: 13px; color: var(--color-text-secondary);
+        cursor: pointer; white-space: nowrap;
+    }
+    .upload-btn:hover { color: var(--color-text-primary); }
+
+    .upload-progress { padding: 10px 24px; font-size: 13px; color: var(--color-text-info); background: var(--color-background-info); }
+
+    .asset-list { overflow-y: auto; flex: 1; }
+    .asset-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 24px; cursor: pointer;
+        border-bottom: 1px solid var(--color-border-tertiary);
+        transition: background 0.1s;
+    }
+    .asset-row:hover { background: var(--color-background-secondary); }
+    .asset-row.selected { background: var(--color-background-info); }
+
+    .asset-type-icon { font-size: 16px; color: var(--color-text-secondary); }
+    .asset-info { flex: 1; min-width: 0; }
+    .asset-name { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .asset-meta { font-size: 11px; color: var(--color-text-tertiary); }
+    .check { color: var(--color-text-info); font-weight: 500; }
+
+    .empty-assets { padding: 32px 24px; text-align: center; color: var(--color-text-tertiary); font-size: 13px; }
+
+    .picker-footer {
+        display: flex; gap: 8px; justify-content: flex-end;
+        padding: 14px 24px;
+        border-top: 1px solid var(--color-border-tertiary);
+    }
+    .btn-primary {
+        padding: 9px 18px; border-radius: 6px;
+        background: var(--color-text-primary); color: var(--color-background-primary);
+        border: none; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+    .btn-secondary {
+        padding: 9px 18px; border-radius: 6px;
+        background: transparent; color: var(--color-text-secondary);
+        border: 1px solid var(--color-border-secondary);
+        font-size: 14px; cursor: pointer;
+    }
+</style>

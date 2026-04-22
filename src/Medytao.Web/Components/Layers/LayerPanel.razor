@@ -1,0 +1,125 @@
+@using Medytao.Shared.Models
+@inject MeditationService MeditationSvc
+
+<div class="layer-panel @(Layer.Muted ? "muted" : "")">
+    <!-- Layer header -->
+    <div class="layer-header">
+        <div class="layer-identity">
+            <span class="layer-icon">@LayerIcon(Layer.Type)</span>
+            <span class="layer-name">@Layer.Type</span>
+            <span class="track-count">@Layer.Tracks.Count() track@(Layer.Tracks.Count() != 1 ? "s" : "")</span>
+        </div>
+        <div class="layer-controls">
+            <label class="volume-label">Vol</label>
+            <input type="range" min="0" max="1" step="0.01"
+                   value="@Layer.Volume"
+                   @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!))"
+                   class="volume-slider" />
+            <span class="volume-value">@((int)(Layer.Volume * 100))%</span>
+            <button class="mute-btn @(Layer.Muted ? "active" : "")" @onclick="ToggleMute" title="Mute layer">
+                @(Layer.Muted ? "🔇" : "🔊")
+            </button>
+        </div>
+        <button class="add-track-btn" @onclick="() => OnOpenAssetPicker.InvokeAsync()">+ Add track</button>
+    </div>
+
+    <!-- Track list -->
+    @if (!Layer.Tracks.Any())
+    {
+        <div class="empty-layer">
+            <span>No tracks yet — add an asset to get started</span>
+        </div>
+    }
+    else
+    {
+        <div class="track-list">
+            @foreach (var track in Layer.Tracks.OrderBy(t => t.Order))
+            {
+                <TrackCard
+                    Track="track"
+                    LayerId="Layer.Id"
+                    OnChanged="OnLayerChanged"
+                    OnRemove="OnLayerChanged" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public LayerDto Layer { get; set; } = null!;
+    [Parameter] public EventCallback OnLayerChanged { get; set; }
+    [Parameter] public EventCallback OnOpenAssetPicker { get; set; }
+
+    private async Task UpdateVolume(float volume)
+    {
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, volume, Layer.Muted);
+        await OnLayerChanged.InvokeAsync();
+    }
+
+    private async Task ToggleMute()
+    {
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, !Layer.Muted);
+        await OnLayerChanged.InvokeAsync();
+    }
+
+    private static string LayerIcon(string type) => type switch
+    {
+        "Music"  => "♪",
+        "Text"   => "≡",
+        "Nature" => "〜",
+        "Fx"     => "✦",
+        _        => "○"
+    };
+}
+
+<style>
+    .layer-panel {
+        background: var(--color-background-primary);
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 10px; overflow: hidden;
+        transition: opacity 0.2s;
+    }
+    .layer-panel.muted { opacity: 0.55; }
+
+    .layer-header {
+        display: flex; align-items: center; gap: 16px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--color-border-tertiary);
+        background: var(--color-background-secondary);
+    }
+
+    .layer-identity { display: flex; align-items: center; gap: 8px; min-width: 160px; }
+    .layer-icon { font-size: 16px; }
+    .layer-name { font-size: 14px; font-weight: 500; }
+    .track-count { font-size: 12px; color: var(--color-text-tertiary); }
+
+    .layer-controls { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .volume-label { font-size: 12px; color: var(--color-text-secondary); }
+    .volume-slider { flex: 1; max-width: 140px; accent-color: var(--color-text-primary); }
+    .volume-value { font-size: 12px; color: var(--color-text-secondary); min-width: 32px; }
+
+    .mute-btn {
+        background: none; border: 1px solid var(--color-border-tertiary);
+        border-radius: 6px; padding: 4px 8px; cursor: pointer;
+        font-size: 14px; line-height: 1;
+        transition: background 0.1s;
+    }
+    .mute-btn.active { background: var(--color-background-warning); border-color: var(--color-border-warning); }
+
+    .add-track-btn {
+        margin-left: auto;
+        padding: 6px 14px; border-radius: 6px;
+        background: var(--color-background-tertiary);
+        border: 1px solid var(--color-border-secondary);
+        font-size: 13px; color: var(--color-text-secondary);
+        cursor: pointer;
+    }
+    .add-track-btn:hover { color: var(--color-text-primary); border-color: var(--color-border-primary); }
+
+    .empty-layer {
+        padding: 24px 18px; text-align: center;
+        color: var(--color-text-tertiary); font-size: 13px;
+    }
+
+    .track-list { display: flex; flex-direction: column; }
+</style>

@@ -1,0 +1,61 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.0.0
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Api", "src\Medytao.Api\Medytao.Api.csproj", "{A1000001-0000-0000-0000-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Application", "src\Medytao.Application\Medytao.Application.csproj", "{A1000002-0000-0000-0000-000000000002}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Domain", "src\Medytao.Domain\Medytao.Domain.csproj", "{A1000003-0000-0000-0000-000000000003}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Infrastructure", "src\Medytao.Infrastructure\Medytao.Infrastructure.csproj", "{A1000004-0000-0000-0000-000000000004}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Shared", "src\Medytao.Shared\Medytao.Shared.csproj", "{A1000005-0000-0000-0000-000000000005}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Web", "src\Medytao.Web\Medytao.Web.csproj", "{A1000006-0000-0000-0000-000000000006}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Api.Tests", "tests\Medytao.Api.Tests\Medytao.Api.Tests.csproj", "{A1000007-0000-0000-0000-000000000007}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Medytao.Application.Tests", "tests\Medytao.Application.Tests\Medytao.Application.Tests.csproj", "{A1000008-0000-0000-0000-000000000008}"
+EndProject
+
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{B0000001-0000-0000-0000-000000000001}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{B0000002-0000-0000-0000-000000000002}"
+EndProject
+
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {A1000001-0000-0000-0000-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000001-0000-0000-0000-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000002-0000-0000-0000-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000002-0000-0000-0000-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000003-0000-0000-0000-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000003-0000-0000-0000-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000004-0000-0000-0000-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000004-0000-0000-0000-000000000004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000005-0000-0000-0000-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000005-0000-0000-0000-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000006-0000-0000-0000-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000006-0000-0000-0000-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000007-0000-0000-0000-000000000007}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000007-0000-0000-0000-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1000008-0000-0000-0000-000000000008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1000008-0000-0000-0000-000000000008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    EndGlobalSection
+    GlobalSection(NestedProjects) = preSolution
+        {A1000001-0000-0000-0000-000000000001} = {B0000001-0000-0000-0000-000000000001}
+        {A1000002-0000-0000-0000-000000000002} = {B0000001-0000-0000-0000-000000000001}
+        {A1000003-0000-0000-0000-000000000003} = {B0000001-0000-0000-0000-000000000001}
+        {A1000004-0000-0000-0000-000000000004} = {B0000001-0000-0000-0000-000000000001}
+        {A1000005-0000-0000-0000-000000000005} = {B0000001-0000-0000-0000-000000000001}
+        {A1000006-0000-0000-0000-000000000006} = {B0000001-0000-0000-0000-000000000001}
+        {A1000007-0000-0000-0000-000000000007} = {B0000002-0000-0000-0000-000000000002}
+        {A1000008-0000-0000-0000-000000000008} = {B0000002-0000-0000-0000-000000000002}
+    EndGlobalSection
+EndGlobal

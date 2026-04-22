@@ -1,0 +1,120 @@
+@page "/assets"
+@inject AssetService AssetSvc
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="page-wrap">
+    <div class="page-header">
+        <div>
+            <h1>Asset library</h1>
+            <p class="subtitle">Your uploaded audio and text files</p>
+        </div>
+        <label class="btn-primary">
+            + Upload files
+            <InputFile OnChange="HandleUpload" accept="audio/*,text/*" multiple style="display:none" />
+        </label>
+    </div>
+
+    @if (_uploading)
+    {
+        <div class="upload-banner">Uploading…</div>
+    }
+
+    @if (_loading)
+    {
+        <div class="empty-state">Loading…</div>
+    }
+    else if (!_assets.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">⊙</div>
+            <p>No assets yet. Upload audio or text files to start building meditations.</p>
+        </div>
+    }
+    else
+    {
+        <div class="asset-grid">
+            @foreach (var a in _assets)
+            {
+                <div class="asset-card">
+                    <div class="asset-icon">@(a.Type == "Audio" ? "♪" : "≡")</div>
+                    <div class="asset-details">
+                        <div class="asset-name" title="@a.FileName">@a.FileName</div>
+                        <div class="asset-meta">
+                            @a.Type · @FormatSize(a.SizeBytes)
+                            @if (a.DurationMs.HasValue) { <text> · @FormatDuration(a.DurationMs.Value)</text> }
+                        </div>
+                    </div>
+                    @if (a.Type == "Audio")
+                    {
+                        <AudioPreviewButton Url="@a.Url" />
+                    }
+                    <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">×</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<Medytao.Shared.Models.AssetDto> _assets = [];
+    private bool _loading = true, _uploading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!await Auth.IsAuthenticatedAsync())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        _assets = await AssetSvc.GetAllAsync() ?? [];
+        _loading = false;
+    }
+
+    private async Task HandleUpload(InputFileChangeEventArgs e)
+    {
+        _uploading = true;
+        foreach (var file in e.GetMultipleFiles(10))
+        {
+            var type = file.ContentType.StartsWith("audio") ? "Audio" : "Text";
+            await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
+            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, type);
+            if (result is not null) _assets.Insert(0, result);
+        }
+        _uploading = false;
+    }
+
+    private async Task Delete(Guid id)
+    {
+        await AssetSvc.DeleteAsync(id);
+        _assets.RemoveAll(a => a.Id == id);
+    }
+
+    private static string FormatSize(long bytes) =>
+        bytes < 1024 * 1024 ? $"{bytes / 1024}KB" : $"{bytes / (1024 * 1024.0):F1}MB";
+    private static string FormatDuration(int ms) =>
+        $"{ms / 60000}:{(ms % 60000 / 1000):D2}";
+}
+
+<style>
+    .page-wrap { padding: 32px 40px; max-width: 1100px; margin: 0 auto; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+    .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+    .btn-primary { padding: 9px 18px; border-radius: 6px; background: var(--color-text-primary); color: var(--color-background-primary); border: none; font-size: 14px; font-weight: 500; cursor: pointer; }
+
+    .upload-banner { padding: 10px 16px; background: var(--color-background-info); color: var(--color-text-info); border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+
+    .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .asset-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 8px; }
+    .asset-icon { font-size: 20px; color: var(--color-text-secondary); }
+    .asset-details { flex: 1; min-width: 0; }
+    .asset-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .asset-meta { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
+    .delete-btn { background: none; border: none; font-size: 18px; color: var(--color-text-tertiary); cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+    .delete-btn:hover { color: var(--color-text-danger); background: var(--color-background-danger); }
+
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
+    .empty-icon { font-size: 36px; margin-bottom: 12px; }
+</style>

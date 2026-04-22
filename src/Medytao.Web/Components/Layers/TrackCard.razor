@@ -1,0 +1,169 @@
+@using Medytao.Shared.Models
+@inject MeditationService MeditationSvc
+
+<div class="track-card @(_expanded ? "expanded" : "")">
+    <!-- Main row -->
+    <div class="track-row" @onclick="ToggleExpand">
+        <span class="drag-handle" @onclick:stopPropagation="true">⠿</span>
+
+        <div class="track-info">
+            <span class="track-filename">@Track.Asset.FileName</span>
+            @if (Track.Asset.DurationMs.HasValue)
+            {
+                <span class="track-duration">@FormatDuration(Track.Asset.DurationMs.Value)</span>
+            }
+        </div>
+
+        <div class="track-quick-controls" @onclick:stopPropagation="true">
+            <AudioPreviewButton Url="@Track.Asset.Url" />
+
+            <input type="range" min="0" max="1" step="0.01"
+                   value="@_volume"
+                   @onchange="e => OnVolumeChange(float.Parse(e.Value!.ToString()!))"
+                   class="vol-slider" title="Volume" />
+            <span class="vol-value">@((int)(_volume * 100))%</span>
+
+            <button class="pill-btn @(_loop ? "active" : "")"
+                    @onclick="ToggleLoop" title="Loop">⟳</button>
+        </div>
+
+        <button class="remove-btn" @onclick:stopPropagation="true" @onclick="Remove" title="Remove track">×</button>
+        <span class="expand-arrow">@(_expanded ? "∧" : "∨")</span>
+    </div>
+
+    <!-- Expanded controls -->
+    @if (_expanded)
+    {
+        <div class="track-detail">
+            <div class="detail-row">
+                <span class="detail-label">Fade in</span>
+                <input type="number" min="0" step="100" @bind="_fadeInMs" class="ms-input" /> ms
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Fade out</span>
+                <input type="number" min="0" step="100" @bind="_fadeOutMs" class="ms-input" /> ms
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Start offset</span>
+                <input type="number" min="0" step="1000" @bind="_startOffsetMs" class="ms-input" /> ms
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Crossfade to next</span>
+                <input type="number" min="0" step="100" @bind="_crossfadeMs" class="ms-input" /> ms
+            </div>
+            <div class="detail-actions">
+                <button class="btn-save" @onclick="SaveDetail">Save changes</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TrackDto Track { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid LayerId { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private bool _expanded;
+    private float _volume;
+    private bool _loop;
+    private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
+
+    protected override void OnParametersSet()
+    {
+        _volume = Track.Volume;
+        _loop = Track.Loop;
+        _fadeInMs = Track.FadeInMs;
+        _fadeOutMs = Track.FadeOutMs;
+        _startOffsetMs = Track.StartOffsetMs;
+        _crossfadeMs = Track.CrossfadeMs;
+    }
+
+    private void ToggleExpand() => _expanded = !_expanded;
+
+    private async Task OnVolumeChange(float v)
+    {
+        _volume = v;
+        await MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loop, _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+    }
+
+    private async Task ToggleLoop()
+    {
+        _loop = !_loop;
+        await MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loop, _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+    }
+
+    private async Task SaveDetail()
+    {
+        await MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loop, _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+        _expanded = false;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Remove()
+    {
+        await MeditationSvc.RemoveTrackAsync(LayerId, Track.Id);
+        await OnRemove.InvokeAsync();
+    }
+
+    private static string FormatDuration(int ms) =>
+        $"{ms / 60000}:{(ms % 60000 / 1000):D2}";
+}
+
+<style>
+    .track-card { border-bottom: 1px solid var(--color-border-tertiary); }
+    .track-card:last-child { border-bottom: none; }
+
+    .track-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 18px; cursor: pointer;
+        transition: background 0.1s;
+    }
+    .track-row:hover { background: var(--color-background-secondary); }
+
+    .drag-handle { color: var(--color-text-tertiary); cursor: grab; font-size: 14px; }
+
+    .track-info { flex: 1; min-width: 0; }
+    .track-filename { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .track-duration { font-size: 11px; color: var(--color-text-tertiary); }
+
+    .track-quick-controls { display: flex; align-items: center; gap: 8px; }
+    .vol-slider { width: 80px; accent-color: var(--color-text-primary); }
+    .vol-value { font-size: 11px; color: var(--color-text-secondary); min-width: 28px; }
+
+    .pill-btn {
+        padding: 3px 8px; border-radius: 20px;
+        border: 1px solid var(--color-border-secondary);
+        background: none; font-size: 13px; cursor: pointer; color: var(--color-text-secondary);
+    }
+    .pill-btn.active { background: var(--color-background-info); border-color: var(--color-border-info); color: var(--color-text-info); }
+
+    .remove-btn {
+        background: none; border: none; font-size: 18px; line-height: 1;
+        color: var(--color-text-tertiary); cursor: pointer;
+        padding: 2px 6px; border-radius: 4px;
+    }
+    .remove-btn:hover { color: var(--color-text-danger); background: var(--color-background-danger); }
+
+    .expand-arrow { font-size: 11px; color: var(--color-text-tertiary); }
+
+    .track-detail {
+        padding: 14px 18px 18px 44px;
+        background: var(--color-background-secondary);
+        display: flex; flex-wrap: wrap; gap: 12px 24px;
+    }
+    .detail-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .detail-label { color: var(--color-text-secondary); min-width: 110px; }
+    .ms-input {
+        width: 72px; padding: 4px 8px; border-radius: 4px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary); font-size: 13px;
+    }
+    .detail-actions { width: 100%; margin-top: 4px; }
+    .btn-save {
+        padding: 6px 14px; border-radius: 6px;
+        background: var(--color-text-primary); color: var(--color-background-primary);
+        border: none; font-size: 13px; cursor: pointer;
+    }
+</style>

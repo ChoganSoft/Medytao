@@ -1,0 +1,176 @@
+@page "/"
+@inject MeditationService MeditationSvc
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="page-wrap">
+    <div class="page-header">
+        <div>
+            <h1>My meditations</h1>
+            <p class="subtitle">Build and manage your meditation sessions</p>
+        </div>
+        <button class="btn-primary" @onclick="CreateNew">+ New meditation</button>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="empty-state">Loading…</div>
+    }
+    else if (!_meditations.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">◎</div>
+            <p>No meditations yet. Create your first one.</p>
+            <button class="btn-primary" @onclick="CreateNew">+ New meditation</button>
+        </div>
+    }
+    else
+    {
+        <div class="meditation-grid">
+            @foreach (var m in _meditations)
+            {
+                <div class="meditation-card" @onclick="() => Open(m.Id)">
+                    <div class="card-status @m.Status.ToLower()">@m.Status</div>
+                    <div class="card-title">@m.Title</div>
+                    @if (!string.IsNullOrEmpty(m.Description))
+                    {
+                        <div class="card-desc">@m.Description</div>
+                    }
+                    <div class="card-meta">@FormatDuration(m.DurationMs) · @m.CreatedAt.ToString("MMM d, yyyy")</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_creating)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <h2>New meditation</h2>
+            <div class="field">
+                <label>Title</label>
+                <input @bind="_newTitle" placeholder="e.g. Morning calm" />
+            </div>
+            <div class="field">
+                <label>Description (optional)</label>
+                <textarea @bind="_newDesc" placeholder="What is this meditation for?" rows="3"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" @onclick="() => _creating = false">Cancel</button>
+                <button class="btn-primary" @onclick="ConfirmCreate" disabled="@(string.IsNullOrWhiteSpace(_newTitle))">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MeditationSummaryDto> _meditations = [];
+    private bool _loading = true, _creating;
+    private string _newTitle = "", _newDesc = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Wczytaj token z localStorage i przypnij do HttpClient
+        await Auth.InitializeAsync();
+
+        // Jeśli nie ma ważnego tokenu — idź na login
+        if (!await Auth.IsAuthenticatedAsync())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            _meditations = await MeditationSvc.GetAllAsync() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            // Token wygasł lub nieautoryzowany — wyczyść i wyślij na login
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login");
+            return;
+        }
+        _loading = false;
+    }
+
+    private void CreateNew() { _newTitle = ""; _newDesc = ""; _creating = true; }
+
+    private async Task ConfirmCreate()
+    {
+        var result = await MeditationSvc.CreateAsync(_newTitle.Trim(), _newDesc.Trim());
+        if (result is not null) Nav.NavigateTo($"/meditations/{result.Id}");
+    }
+
+    private void Open(Guid id) => Nav.NavigateTo($"/meditations/{id}");
+
+    private static string FormatDuration(int ms) =>
+        ms == 0 ? "No duration set" : $"{ms / 60000}m {(ms % 60000) / 1000}s";
+}
+
+<style>
+    .page-wrap { padding: 32px 40px; max-width: 1100px; margin: 0 auto; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+    .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+
+    .meditation-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .meditation-card {
+        background: var(--color-background-primary);
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 10px; padding: 20px;
+        cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .meditation-card:hover { border-color: var(--color-border-secondary); }
+
+    .card-status {
+        display: inline-block; font-size: 11px; font-weight: 500;
+        padding: 2px 8px; border-radius: 20px; margin-bottom: 10px;
+        text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .card-status.draft { background: var(--color-background-warning); color: var(--color-text-warning); }
+    .card-status.published { background: var(--color-background-success); color: var(--color-text-success); }
+    .card-status.archived { background: var(--color-background-secondary); color: var(--color-text-tertiary); }
+
+    .card-title { font-size: 16px; font-weight: 500; margin-bottom: 6px; }
+    .card-desc { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 12px; line-height: 1.5; }
+    .card-meta { font-size: 12px; color: var(--color-text-tertiary); }
+
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
+    .empty-icon { font-size: 36px; margin-bottom: 12px; }
+
+    .modal-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.4);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 100;
+    }
+    .modal {
+        background: var(--color-background-primary);
+        border-radius: 12px; padding: 32px;
+        width: 440px; max-width: 90vw;
+    }
+    .modal h2 { font-size: 18px; font-weight: 500; margin: 0 0 24px; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field label { font-size: 13px; color: var(--color-text-secondary); }
+    .field input, .field textarea {
+        padding: 9px 12px; border-radius: 6px; font-size: 14px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary); resize: vertical;
+    }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; }
+    .btn-primary {
+        padding: 9px 18px; border-radius: 6px;
+        background: var(--color-text-primary); color: var(--color-background-primary);
+        border: none; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+    .btn-secondary {
+        padding: 9px 18px; border-radius: 6px;
+        background: transparent; color: var(--color-text-secondary);
+        border: 1px solid var(--color-border-secondary);
+        font-size: 14px; cursor: pointer;
+    }
+</style>

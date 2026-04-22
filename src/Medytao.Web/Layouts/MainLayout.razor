@@ -1,0 +1,83 @@
+@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">◎</span>
+            <span class="brand-name">Medytao</span>
+        </div>
+        <nav class="sidebar-nav">
+            <NavLink href="/" Match="NavLinkMatch.All" class="nav-item">
+                <span class="nav-icon">⊞</span> My meditations
+            </NavLink>
+            <NavLink href="/assets" class="nav-item">
+                <span class="nav-icon">⊙</span> Asset library
+            </NavLink>
+        </nav>
+        <div class="sidebar-footer">
+            <button class="nav-item logout-btn" @onclick="Logout">
+                <span class="nav-icon">↩</span> Sign out
+            </button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        @Body
+    </main>
+</div>
+
+@code {
+    private async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login");
+    }
+}
+
+<style>
+    .app-shell { display: flex; height: 100vh; overflow: hidden; }
+
+    .sidebar {
+        width: 220px; min-width: 220px;
+        background: var(--color-background-secondary);
+        border-right: 1px solid var(--color-border-tertiary);
+        display: flex; flex-direction: column;
+        padding: 0;
+    }
+
+    .sidebar-brand {
+        display: flex; align-items: center; gap: 10px;
+        padding: 20px 20px 16px;
+        border-bottom: 1px solid var(--color-border-tertiary);
+        font-size: 15px; font-weight: 500;
+        color: var(--color-text-primary);
+    }
+
+    .brand-icon { font-size: 20px; }
+
+    .sidebar-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; flex: 1; }
+
+    .nav-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 12px; border-radius: 6px;
+        font-size: 14px; color: var(--color-text-secondary);
+        text-decoration: none; cursor: pointer;
+        background: none; border: none; width: 100%; text-align: left;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .nav-item:hover, .nav-item.active {
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+    }
+
+    .nav-icon { font-size: 15px; opacity: 0.7; }
+
+    .sidebar-footer { padding: 8px 8px 16px; border-top: 1px solid var(--color-border-tertiary); margin-top: auto; }
+
+    .logout-btn { color: var(--color-text-tertiary); }
+
+    .main-content { flex: 1; overflow-y: auto; background: var(--color-background-tertiary); }
+</style>

@@ -1,0 +1,76 @@
+/* ── Design tokens ────────────────────────────────────────────────────────── */
+:root {
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f7f6f2;
+    --color-background-tertiary: #f1efe8;
+    --color-background-info: #e6f1fb;
+    --color-background-success: #eaf3de;
+    --color-background-warning: #faeeda;
+    --color-background-danger: #fcebeb;
+
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #5f5e5a;
+    --color-text-tertiary: #888780;
+    --color-text-info: #0c447c;
+    --color-text-success: #3b6d11;
+    --color-text-warning: #854f0b;
+    --color-text-danger: #a32d2d;
+
+    --color-border-tertiary: rgba(0,0,0,0.08);
+    --color-border-secondary: rgba(0,0,0,0.16);
+    --color-border-primary: rgba(0,0,0,0.24);
+    --color-border-info: #b5d4f4;
+    --color-border-warning: #fac775;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-background-primary: #1e1e1d;
+        --color-background-secondary: #2a2a28;
+        --color-background-tertiary: #171716;
+        --color-background-info: #042c53;
+        --color-background-success: #173404;
+        --color-background-warning: #412402;
+        --color-background-danger: #501313;
+
+        --color-text-primary: #f1efe8;
+        --color-text-secondary: #b4b2a9;
+        --color-text-tertiary: #888780;
+        --color-text-info: #b5d4f4;
+        --color-text-success: #c0dd97;
+        --color-text-warning: #fac775;
+        --color-text-danger: #f7c1c1;
+
+        --color-border-tertiary: rgba(255,255,255,0.08);
+        --color-border-secondary: rgba(255,255,255,0.16);
+        --color-border-primary: rgba(255,255,255,0.24);
+    }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0; padding: 0;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-primary);
+    background: var(--color-background-tertiary);
+    -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--color-text-info); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { font-family: inherit; }
+
+input, textarea { font-family: inherit; outline: none; }
+input:focus, textarea:focus { border-color: var(--color-border-primary); }
+
+/* Active nav link styling for Blazor NavLink */
+.nav-item.active {
+    background: var(--color-background-primary) !important;
+    color: var(--color-text-primary) !important;
+}

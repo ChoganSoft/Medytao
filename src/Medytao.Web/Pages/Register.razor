@@ -1,0 +1,64 @@
+@page "/register"
+@layout EmptyLayout
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-brand">◎ Medytao</div>
+        <h1>Create account</h1>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="error-banner">@_error</div>
+        }
+
+        <div class="field">
+            <label>Display name</label>
+            <input @bind="_name" placeholder="Your name" />
+        </div>
+        <div class="field">
+            <label>Email</label>
+            <input type="email" @bind="_email" placeholder="you@example.com" />
+        </div>
+        <div class="field">
+            <label>Password</label>
+            <input type="password" @bind="_password" placeholder="at least 8 characters" />
+        </div>
+        <button class="btn-primary" @onclick="SignUp" disabled="@_loading">
+            @(_loading ? "Creating…" : "Create account")
+        </button>
+
+        <p class="switch-link">Have an account? <a href="/login">Sign in</a></p>
+    </div>
+</div>
+
+@code {
+    private string _email = "", _name = "", _password = "", _error = "";
+    private bool _loading;
+
+    private async Task SignUp()
+    {
+        if (_password.Length < 8) { _error = "Password must be at least 8 characters."; return; }
+        _loading = true; _error = "";
+        if (!await Auth.RegisterAsync(_email, _name, _password))
+            _error = "Could not create account. Email may already be in use.";
+        else
+            Nav.NavigateTo("/");
+        _loading = false;
+    }
+}
+
+<style>
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-background-tertiary); }
+    .login-card { width: 360px; padding: 40px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 12px; }
+    .login-brand { font-size: 16px; font-weight: 500; margin-bottom: 24px; color: var(--color-text-secondary); }
+    h1 { font-size: 22px; font-weight: 500; margin: 0 0 24px; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field label { font-size: 13px; color: var(--color-text-secondary); }
+    .field input { padding: 9px 12px; border-radius: 6px; font-size: 14px; border: 1px solid var(--color-border-secondary); background: var(--color-background-secondary); color: var(--color-text-primary); }
+    .btn-primary { width: 100%; padding: 10px; border-radius: 6px; background: var(--color-text-primary); color: var(--color-background-primary); border: none; font-size: 14px; font-weight: 500; cursor: pointer; margin-top: 8px; }
+    .btn-primary:disabled { opacity: 0.5; cursor: default; }
+    .error-banner { background: var(--color-background-danger); color: var(--color-text-danger); border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 16px; }
+    .switch-link { font-size: 13px; color: var(--color-text-secondary); margin-top: 16px; text-align: center; }
+</style>
