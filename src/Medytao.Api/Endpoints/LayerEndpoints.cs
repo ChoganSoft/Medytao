@@ -23,7 +23,7 @@ public static class LayerEndpoints
         {
             var result = await mediator.Send(new AddTrackCommand(
                 layerId, req.AssetId,
-                req.Volume, req.Loop,
+                req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
                 req.StartOffsetMs, req.CrossfadeMs));
             return Results.Created($"/api/v1/layers/{layerId}/tracks/{result.Id}", result);
@@ -32,7 +32,7 @@ public static class LayerEndpoints
         group.MapPut("/{layerId:guid}/tracks/{trackId:guid}", async (Guid trackId, UpdateTrackRequest req, IMediator mediator) =>
         {
             var result = await mediator.Send(new UpdateTrackCommand(
-                trackId, req.Volume, req.Loop,
+                trackId, req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
                 req.StartOffsetMs, req.CrossfadeMs));
             return Results.Ok(result);
@@ -56,14 +56,14 @@ public record UpdateLayerRequest(float Volume, bool Muted);
 public record AddTrackRequest(
     Guid AssetId,
     float Volume = 1f,
-    bool Loop = false,
+    int LoopCount = 1,
     int FadeInMs = 0,
     int FadeOutMs = 0,
     int StartOffsetMs = 0,
     int CrossfadeMs = 0);
 public record UpdateTrackRequest(
     float Volume,
-    bool Loop,
+    int LoopCount,
     int FadeInMs,
     int FadeOutMs,
     int StartOffsetMs,

@@ -7,7 +7,13 @@
         <span class="drag-handle" @onclick:stopPropagation="true">⠿</span>
 
         <div class="track-info">
-            <span class="track-filename">@Track.Asset.FileName</span>
+            <span class="track-filename">
+                @Track.Asset.FileName
+                @if (BlocksSequence)
+                {
+                    <span class="blocks-sequence" title="Loops forever — tracks after this one won't play">∞</span>
+                }
+            </span>
             @if (Track.Asset.DurationMs.HasValue)
             {
                 <span class="track-duration">@FormatDuration(Track.Asset.DurationMs.Value)</span>
@@ -23,8 +29,21 @@
                    class="vol-slider" title="Volume" />
             <span class="vol-value">@((int)(_volume * 100))%</span>
 
-            <button class="pill-btn @(_loop ? "active" : "")"
-                    @onclick="ToggleLoop" title="Loop">⟳</button>
+            <div class="loop-control" title="Play N times (0 = loop forever)">
+                <span class="loop-icon">⟳</span>
+                <input type="number" min="0" max="99" step="1"
+                       value="@_loopCount"
+                       @onchange="e => OnLoopCountChange(int.Parse(e.Value!.ToString()!))"
+                       class="loop-input" />
+                @if (_loopCount == 0)
+                {
+                    <span class="loop-infinity">∞</span>
+                }
+                else
+                {
+                    <span class="loop-x">×</span>
+                }
+            </div>
         </div>
 
         <button class="remove-btn" @onclick:stopPropagation="true" @onclick="Remove" title="Remove track">×</button>
@@ -61,18 +80,23 @@
 @code {
     [Parameter, EditorRequired] public TrackDto Track { get; set; } = null!;
     [Parameter, EditorRequired] public Guid LayerId { get; set; }
+    /// <summary>
+    /// True when this track loops forever AND there are later tracks in the same layer
+    /// that will never play because of that. Shown as a subtle ∞ badge.
+    /// </summary>
+    [Parameter] public bool BlocksSequence { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public EventCallback OnRemove { get; set; }
 
     private bool _expanded;
     private float _volume;
-    private bool _loop;
+    private int _loopCount;
     private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
 
     protected override void OnParametersSet()
     {
         _volume = Track.Volume;
-        _loop = Track.Loop;
+        _loopCount = Track.LoopCount;
         _fadeInMs = Track.FadeInMs;
         _fadeOutMs = Track.FadeOutMs;
         _startOffsetMs = Track.StartOffsetMs;
@@ -84,21 +108,28 @@
     private async Task OnVolumeChange(float v)
     {
         _volume = v;
-        await MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loop, _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+        await PersistAsync();
     }
 
-    private async Task ToggleLoop()
+    private async Task OnLoopCountChange(int n)
     {
-        _loop = !_loop;
-        await MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loop, _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+        if (n < 0) n = 0;
+        if (n > 99) n = 99;
+        _loopCount = n;
+        await PersistAsync();
+        await OnChanged.InvokeAsync();
     }
 
     private async Task SaveDetail()
     {
-        await MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loop, _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+        await PersistAsync();
         _expanded = false;
         await OnChanged.InvokeAsync();
     }
+
+    private Task PersistAsync() =>
+        MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loopCount,
+            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
 
     private async Task Remove()
     {
@@ -127,16 +158,34 @@
     .track-filename { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .track-duration { font-size: 11px; color: var(--color-text-tertiary); }
 
+    .blocks-sequence {
+        margin-left: 6px;
+        font-size: 11px;
+        color: var(--color-text-warning, #c97a00);
+        cursor: help;
+    }
+
     .track-quick-controls { display: flex; align-items: center; gap: 8px; }
     .vol-slider { width: 80px; accent-color: var(--color-text-primary); }
     .vol-value { font-size: 11px; color: var(--color-text-secondary); min-width: 28px; }
 
-    .pill-btn {
-        padding: 3px 8px; border-radius: 20px;
+    .loop-control {
+        display: flex; align-items: center; gap: 2px;
+        padding: 2px 8px; border-radius: 20px;
         border: 1px solid var(--color-border-secondary);
-        background: none; font-size: 13px; cursor: pointer; color: var(--color-text-secondary);
+        background: none; font-size: 12px; color: var(--color-text-secondary);
     }
-    .pill-btn.active { background: var(--color-background-info); border-color: var(--color-border-info); color: var(--color-text-info); }
+    .loop-icon { font-size: 12px; }
+    .loop-input {
+        width: 36px; border: none; background: transparent;
+        font-size: 12px; color: var(--color-text-primary); text-align: right;
+        -moz-appearance: textfield; appearance: textfield;
+    }
+    .loop-input::-webkit-outer-spin-button,
+    .loop-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .loop-input:focus { outline: none; }
+    .loop-infinity { font-size: 14px; color: var(--color-text-info); }
+    .loop-x { font-size: 11px; color: var(--color-text-tertiary); }
 
     .remove-btn {
         background: none; border: none; font-size: 18px; line-height: 1;

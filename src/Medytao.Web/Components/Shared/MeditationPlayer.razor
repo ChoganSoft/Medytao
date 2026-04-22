@@ -1,6 +1,9 @@
 @* Pełny player medytacji — miksuje wszystkie 4 warstwy jednocześnie.
-   Każda warstwa = osobny <audio> z własnym volume/mute.
-   Gra pierwszy track z każdej warstwy (v1 — bez sekwencji tracków). *@
+   W każdej warstwie tracki grają sekwencyjnie (wg Order).
+   Track z LoopCount=0 zapętla się w nieskończoność i blokuje kolejne w warstwie.
+   Logika sekwencji siedzi w window.medytaoPlayer (audioPreview.js). *@
+
+@implements IAsyncDisposable
 
 @if (Open)
 {
@@ -25,19 +28,19 @@
             <div class="player-layers">
                 @foreach (var layer in Meditation.Layers.OrderBy(l => l.Type))
                 {
-                    var firstTrack = layer.Tracks.OrderBy(t => t.Order).FirstOrDefault();
+                    var trackCount = layer.Tracks.Count();
                     <div class="player-layer @(layer.Muted ? "muted" : "")">
                         <span class="player-layer-icon">@LayerIcon(layer.Type)</span>
                         <div class="player-layer-info">
                             <div class="player-layer-name">@layer.Type</div>
                             <div class="player-layer-track">
-                                @if (firstTrack is null)
+                                @if (trackCount == 0)
                                 {
                                     <span class="no-track">No tracks</span>
                                 }
                                 else
                                 {
-                                    <span>@firstTrack.Asset.FileName</span>
+                                    <span>@trackCount track@(trackCount == 1 ? "" : "s") in sequence</span>
                                 }
                             </div>
                         </div>
@@ -46,21 +49,6 @@
                             @if (layer.Muted) { <text> · muted</text> }
                         </div>
                     </div>
-                }
-            </div>
-
-            <!-- Ukryte elementy audio, jeden per warstwa -->
-            <div style="display:none">
-                @foreach (var layer in Meditation.Layers.OrderBy(l => l.Type))
-                {
-                    var firstTrack = layer.Tracks.OrderBy(t => t.Order).FirstOrDefault();
-                    if (firstTrack is not null)
-                    {
-                        <audio @ref="_audioRefs[layer.Id]"
-                               src="@firstTrack.Asset.Url"
-                               preload="auto"
-                               loop="@firstTrack.Loop"></audio>
-                    }
                 }
             </div>
 
@@ -78,8 +66,8 @@
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
-    private readonly Dictionary<Guid, ElementReference> _audioRefs = new();
     private bool _playing;
+    private string? _sessionId;
 
     private int ActiveLayerCount =>
         Meditation.Layers.Count(l => l.Tracks.Any() && !l.Muted);
@@ -92,24 +80,33 @@
 
     private async Task PlayAll()
     {
-        foreach (var layer in Meditation.Layers)
-        {
-            var firstTrack = layer.Tracks.OrderBy(t => t.Order).FirstOrDefault();
-            if (firstTrack is null) continue;
-            if (!_audioRefs.TryGetValue(layer.Id, out var audio)) continue;
+        // Buduj payload: per warstwa lista tracków (url, volume, loopCount).
+        var layers = Meditation.Layers
+            .Where(l => l.Tracks.Any())
+            .Select(l => new
+            {
+                id = l.Id,
+                volume = l.Volume,
+                muted = l.Muted,
+                tracks = l.Tracks.OrderBy(t => t.Order).Select(t => new
+                {
+                    url = t.Asset.Url,
+                    volume = t.Volume,
+                    loopCount = t.LoopCount
+                }).ToArray()
+            }).ToArray();
 
-            // Efektywny volume = volume warstwy * volume tracka (0 jeśli muted)
-            var effectiveVolume = layer.Muted ? 0f : layer.Volume * firstTrack.Volume;
-
-            await JS.InvokeVoidAsync("meditationPlayer.play", audio, effectiveVolume);
-        }
+        _sessionId = await JS.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers);
         _playing = true;
     }
 
     private async Task StopAll()
     {
-        foreach (var audio in _audioRefs.Values)
-            await JS.InvokeVoidAsync("meditationPlayer.stop", audio);
+        if (_sessionId is not null)
+        {
+            await JS.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId);
+            _sessionId = null;
+        }
         _playing = false;
     }
 
@@ -117,6 +114,15 @@
     {
         if (_playing) await StopAll();
         await OnClose.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_sessionId is not null)
+        {
+            try { await JS.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId); } catch { }
+            _sessionId = null;
+        }
     }
 
     private static string LayerIcon(string type) => type switch

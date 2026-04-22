@@ -34,10 +34,6 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         return true;
     }
 
-    /// <summary>
-    /// Wczytuje token z localStorage i przypina do HttpClient.
-    /// Wywoływane na początku każdej strony wymagającej autoryzacji.
-    /// </summary>
     public async Task InitializeAsync()
     {
         if (_initialized) return;
@@ -47,9 +43,6 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         _initialized = true;
     }
 
-    /// <summary>
-    /// Sprawdza czy użytkownik ma ważny token.
-    /// </summary>
     public async Task<bool> IsAuthenticatedAsync()
     {
         var token = await storage.GetItemAsync<AuthTokenDto>(TokenKey);
@@ -94,10 +87,10 @@ public class MeditationService(HttpClient http)
     }
 
     public async Task<TrackDto?> UpdateTrackAsync(Guid trackId, Guid layerId,
-        float volume, bool loop, int fadeInMs, int fadeOutMs, int startOffsetMs, int crossfadeMs)
+        float volume, int loopCount, int fadeInMs, int fadeOutMs, int startOffsetMs, int crossfadeMs)
     {
         var response = await http.PutAsJsonAsync($"/api/v1/layers/{layerId}/tracks/{trackId}",
-            new { volume, loop, fadeInMs, fadeOutMs, startOffsetMs, crossfadeMs });
+            new { volume, loopCount, fadeInMs, fadeOutMs, startOffsetMs, crossfadeMs });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<TrackDto>() : null;
     }
 

@@ -33,11 +33,18 @@
     else
     {
         <div class="track-list">
-            @foreach (var track in Layer.Tracks.OrderBy(t => t.Order))
+            @{
+                var ordered = Layer.Tracks.OrderBy(t => t.Order).ToList();
+                var lastIndex = ordered.Count - 1;
+            }
+            @for (var i = 0; i < ordered.Count; i++)
             {
+                var track = ordered[i];
+                var blocks = track.LoopCount == 0 && i < lastIndex;
                 <TrackCard
                     Track="track"
                     LayerId="Layer.Id"
+                    BlocksSequence="blocks"
                     OnChanged="OnLayerChanged"
                     OnRemove="OnLayerChanged" />
             }

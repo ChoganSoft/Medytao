@@ -29,7 +29,7 @@ public class UpdateLayerHandler(ILayerRepository repo, IUnitOfWork uow, IStorage
 // ── Add track to layer ─────────────────────────────────────────────────────────
 public record AddTrackCommand(
     Guid LayerId, Guid AssetId,
-    float Volume = 1f, bool Loop = false,
+    float Volume = 1f, int LoopCount = 1,
     int FadeInMs = 0, int FadeOutMs = 0,
     int StartOffsetMs = 0, int CrossfadeMs = 0
 ) : IRequest<TrackDto>;
@@ -53,7 +53,7 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
             AssetId = cmd.AssetId,
             Order = nextOrder,
             Volume = cmd.Volume,
-            Loop = cmd.Loop,
+            LoopCount = cmd.LoopCount,
             FadeInMs = cmd.FadeInMs,
             FadeOutMs = cmd.FadeOutMs,
             StartOffsetMs = cmd.StartOffsetMs,
@@ -69,7 +69,7 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
 
 // ── Update track ───────────────────────────────────────────────────────────────
 public record UpdateTrackCommand(
-    Guid TrackId, float Volume, bool Loop,
+    Guid TrackId, float Volume, int LoopCount,
     int FadeInMs, int FadeOutMs, int StartOffsetMs, int CrossfadeMs
 ) : IRequest<TrackDto>;
 
@@ -82,7 +82,7 @@ public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorage
             ?? throw new KeyNotFoundException($"Track {cmd.TrackId} not found.");
 
         track.Volume = cmd.Volume;
-        track.Loop = cmd.Loop;
+        track.LoopCount = cmd.LoopCount;
         track.FadeInMs = cmd.FadeInMs;
         track.FadeOutMs = cmd.FadeOutMs;
         track.StartOffsetMs = cmd.StartOffsetMs;
@@ -129,7 +129,7 @@ internal static class LayerMappings
         l.Tracks.OrderBy(t => t.Order).Select(t => t.ToDto(storage)));
 
     public static TrackDto ToDto(this Track t, IStorageService storage) => new(
-        t.Id, t.Order, t.Volume, t.Loop,
+        t.Id, t.Order, t.Volume, t.LoopCount,
         t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,
         new AssetDto(
             t.Asset.Id, t.Asset.FileName, t.Asset.ContentType,

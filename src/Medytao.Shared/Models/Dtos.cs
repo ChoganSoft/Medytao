@@ -17,7 +17,7 @@ public record TrackDto(
     Guid Id,
     int Order,
     float Volume,
-    bool Loop,
+    int LoopCount,
     int FadeInMs,
     int FadeOutMs,
     int StartOffsetMs,

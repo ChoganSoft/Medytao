@@ -3,6 +3,31 @@
 Format oparty o [Keep a Changelog](https://keepachangelog.com/),
 wersjonowanie [SemVer](https://semver.org/).
 
+## [0.11.0]
+
+### Migration notes
+Breaking DB schema change — reset dev database before first run:
+
+Database will be re-created on next API start via `EnsureCreated`.
+
+After resetting the database, clear `auth_token` in browser localStorage
+(DevTools → Application → Local Storage → remove `auth_token`) and register
+a new account. Existing tokens reference users that no longer exist.
+
+API clients must send `loopCount` instead of `loop` in track create/update requests.
+
+## [0.10.2] — 2026-04-22
+
+### Changed
+- Dev database migrated from SQL Server LocalDB to SQL Server Express.
+  Connection string in `appsettings.json` now points to `.\SQLEXPRESS` and
+  database name changed from `Medytao` to `Medytao.Db`.
+
+### Migration notes
+Wymagania: zainstalowany lokalnie SQL Server (np. Express) z instancją `SQLEXPRESS`.
+Stara baza w LocalDB (`Medytao`) nie jest już używana — można ją skasować lub zostawić.
+Nowa baza `Medytao.Db` utworzy się automatycznie przez EnsureCreated przy pierwszym starcie API.
+
 ## [0.10.1] — 2026-04-19
 
 ### Fixed

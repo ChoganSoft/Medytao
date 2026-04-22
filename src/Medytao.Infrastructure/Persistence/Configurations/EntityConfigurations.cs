@@ -69,6 +69,7 @@ public class TrackConfiguration : IEntityTypeConfiguration<Track>
     {
         b.HasKey(t => t.Id);
         b.Property(t => t.Volume).HasDefaultValue(1.0f);
+        b.Property(t => t.LoopCount).HasDefaultValue(1);
         b.Property(t => t.FadeInMs).HasDefaultValue(0);
         b.Property(t => t.FadeOutMs).HasDefaultValue(0);
         b.Property(t => t.StartOffsetMs).HasDefaultValue(0);
@@ -79,7 +80,8 @@ public class TrackConfiguration : IEntityTypeConfiguration<Track>
             .HasForeignKey(t => t.AssetId)
             .OnDelete(DeleteBehavior.Restrict); // don't cascade — asset may be reused
 
-        b.HasIndex(t => new { t.LayerId, t.Order });
+        // Unique so sequential playback is deterministic.
+        b.HasIndex(t => new { t.LayerId, t.Order }).IsUnique();
     }
 }
 
