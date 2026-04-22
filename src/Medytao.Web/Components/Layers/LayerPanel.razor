@@ -13,7 +13,7 @@
             <label class="volume-label">Vol</label>
             <input type="range" min="0" max="1" step="0.01"
                    value="@Layer.Volume"
-                   @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!))"
+                   @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                    class="medytao-slider volume-slider"
                    style="--slider-fill: @((int)(Layer.Volume * 100))%" />
             <span class="volume-value">@((int)(Layer.Volume * 100))%</span>
