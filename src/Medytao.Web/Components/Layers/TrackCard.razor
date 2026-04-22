@@ -22,7 +22,7 @@
 
         <div class="track-quick-controls" @onclick:stopPropagation="true">
             <input type="range" min="0" max="1" step="0.01"
-                   value="@_volume"
+                   value="@_volume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                    @onchange="e => OnVolumeChange(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                    class="medytao-slider vol-slider"
                    style="--slider-fill: @((int)(_volume * 100))%"
