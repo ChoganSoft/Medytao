@@ -27,33 +27,36 @@ public sealed class PlaybackSessionService
     public async Task SetLayerVolumeAsync(Guid layerId, float volume)
     {
         if (_sessionId is null) return;
-        try
-        {
-            await _js.InvokeVoidAsync("medytaoPlayer.setLayerVolume", _sessionId, layerId, volume);
-        }
-        catch
-        {
-            // JS mógł się rozpaść (np. sesja już zakończona) — traktujemy jako no-op.
-        }
+        await SafeInvoke("medytaoPlayer.setLayerVolume", _sessionId, layerId.ToString(), volume);
     }
 
     public async Task SetLayerMutedAsync(Guid layerId, bool muted)
     {
         if (_sessionId is null) return;
-        try
-        {
-            await _js.InvokeVoidAsync("medytaoPlayer.setLayerMuted", _sessionId, layerId, muted);
-        }
-        catch { }
+        await SafeInvoke("medytaoPlayer.setLayerMuted", _sessionId, layerId.ToString(), muted);
     }
 
     public async Task SetTrackVolumeAsync(Guid layerId, Guid trackId, float volume)
     {
         if (_sessionId is null) return;
+        await SafeInvoke("medytaoPlayer.setTrackVolume", _sessionId, layerId.ToString(), trackId.ToString(), volume);
+    }
+
+    private async Task SafeInvoke(string identifier, params object?[] args)
+    {
         try
         {
-            await _js.InvokeVoidAsync("medytaoPlayer.setTrackVolume", _sessionId, layerId, trackId, volume);
+            await _js.InvokeVoidAsync(identifier, args);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Nie chcemy wywracać UI — ale też nie chcemy cicho zjeść błędu,
+            // więc zgłaszamy w konsoli przeglądarki.
+            try
+            {
+                await _js.InvokeVoidAsync("console.error", $"[PlaybackSession] {identifier} failed", ex.Message);
+            }
+            catch { }
+        }
     }
 }

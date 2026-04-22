@@ -170,6 +170,15 @@ window.meditationPlayer = window.medytaoAudio;
                 });
 
             sessions.set(sessionId, { layers: layerStates });
+            console.debug('[medytaoPlayer] startSession', {
+                sessionId,
+                layers: layerStates.map(L => ({
+                    layerId: L.layerId,
+                    layerVolume: L.layerVolume,
+                    muted: L.muted,
+                    tracks: L.tracks.map(t => ({ trackId: t.trackId, volume: t.volume, url: t.url }))
+                }))
+            });
 
             for (const state of layerStates) {
                 playCurrent(state);
@@ -209,18 +218,26 @@ window.meditationPlayer = window.medytaoAudio;
         // od razu głośność aktywnego <audio>.
         setLayerVolume(sessionId, layerId, volume) {
             const L = findLayer(sessionId, layerId);
-            if (!L) return;
+            if (!L) {
+                console.warn('[medytaoPlayer] setLayerVolume: layer not found', { sessionId, layerId });
+                return;
+            }
             L.layerVolume = clamp01(volume);
             applyCurrentVolume(L);
+            console.debug('[medytaoPlayer] setLayerVolume', { layerId, volume: L.layerVolume, effective: L.audio ? L.audio.volume : null });
         },
 
         // Wycisz / odcisz warstwę. Nie zatrzymujemy <audio> — tylko ściągamy
         // głośność do 0, żeby synchronizacja z innymi warstwami się nie rozjechała.
         setLayerMuted(sessionId, layerId, muted) {
             const L = findLayer(sessionId, layerId);
-            if (!L) return;
+            if (!L) {
+                console.warn('[medytaoPlayer] setLayerMuted: layer not found', { sessionId, layerId });
+                return;
+            }
             L.muted = !!muted;
             applyCurrentVolume(L);
+            console.debug('[medytaoPlayer] setLayerMuted', { layerId, muted: L.muted });
         },
 
         // Real-time głośność pojedynczego tracka. Mutujemy wpis w state.tracks —
@@ -228,21 +245,59 @@ window.meditationPlayer = window.medytaoAudio;
         // zobaczy nową wartość.
         setTrackVolume(sessionId, layerId, trackId, volume) {
             const L = findLayer(sessionId, layerId);
-            if (!L) return;
-            const t = L.tracks.find(x => x && x.trackId === trackId);
-            if (!t) return;
+            if (!L) {
+                console.warn('[medytaoPlayer] setTrackVolume: layer not found', { sessionId, layerId, knownLayers: sessions.get(sessionId)?.layers.map(l => l.layerId) });
+                return;
+            }
+            const t = L.tracks.find(x => x && eqId(x.trackId, trackId));
+            if (!t) {
+                console.warn('[medytaoPlayer] setTrackVolume: track not found', { layerId, trackId, knownTracks: L.tracks.map(x => x && x.trackId) });
+                return;
+            }
             t.volume = clamp01(volume);
-            if (L.tracks[L.index] === t) applyCurrentVolume(L);
+            const current = L.tracks[L.index];
+            const isCurrent = current && eqId(current.trackId, trackId);
+            if (isCurrent) applyCurrentVolume(L);
+            console.debug('[medytaoPlayer] setTrackVolume', {
+                layerId, trackId, volume: t.volume, isCurrent,
+                audioVolume: L.audio ? L.audio.volume : null,
+                layerVolume: L.layerVolume, muted: L.muted
+            });
+        },
+
+        // Diagnostyka — pozwala sprawdzić z konsoli, co jest w sesji.
+        dump(sessionId) {
+            const s = sessions.get(sessionId);
+            if (!s) return null;
+            return s.layers.map(L => ({
+                layerId: L.layerId,
+                layerVolume: L.layerVolume,
+                muted: L.muted,
+                index: L.index,
+                audioVolume: L.audio ? L.audio.volume : null,
+                tracks: L.tracks.map(t => ({ trackId: t.trackId, volume: t.volume, loopCount: t.loopCount }))
+            }));
         },
 
         // Debug helper — not used by Blazor.
         _sessions: sessions
     };
 
+    // Guid-y z Blazora czasem przychodzą w różnych notacjach (małe/wielkie
+    // litery, z/bez myślników). Porównujemy po znormalizowanym stringu.
+    function normalizeId(v) {
+        if (v === null || v === undefined) return '';
+        return String(v).toLowerCase().replace(/[^0-9a-f]/g, '');
+    }
+
+    function eqId(a, b) {
+        return normalizeId(a) === normalizeId(b);
+    }
+
     function findLayer(sessionId, layerId) {
         const s = sessions.get(sessionId);
         if (!s) return null;
-        return s.layers.find(L => L.layerId === layerId) || null;
+        return s.layers.find(L => eqId(L.layerId, layerId)) || null;
     }
 
     function applyCurrentVolume(L) {
