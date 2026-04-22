@@ -1,12 +1,11 @@
-@* Przycisk Play/Pause dla pojedynczego pliku audio.
+@* Przycisk Play/Pause + pasek postępu dla pojedynczego pliku audio.
    Używa natywnego <audio> + helperów w window.medytaoAudio.
-   Podczas odtwarzania pokazuje cienki pasek postępu pod przyciskiem. *@
+   Pasek jest zawsze widoczny obok przycisku — wypełnia się podczas odtwarzania. *@
 
 @implements IAsyncDisposable
 
-<span class="audio-preview-wrap">
+<span class="audio-preview-wrap" @onclick:stopPropagation="true">
     <button class="audio-preview-btn @(_playing ? "playing" : "")"
-            @onclick:stopPropagation="true"
             @onclick="Toggle"
             title="@(_playing ? "Pause" : "Preview")">
         @if (_playing)
@@ -19,15 +18,12 @@
         }
     </button>
 
-    @if (_playing)
-    {
-        <span class="audio-preview-progress">
-            <span class="audio-preview-progress-fill" style="@ProgressStyle"></span>
-        </span>
-    }
+    <span class="audio-preview-progress" title="@(_duration > 0 ? FormatTime(_currentTime) + " / " + FormatTime(_duration) : "")">
+        <span class="audio-preview-progress-fill" style="@ProgressStyle"></span>
+    </span>
 </span>
 
-<audio @ref="_audioRef" src="@Url" preload="none" @onended="HandleEnded"></audio>
+<audio @ref="_audioRef" src="@Url" preload="metadata" @onended="HandleEnded" @onloadedmetadata="HandleLoadedMetadata"></audio>
 
 @code {
     [Parameter, EditorRequired] public string Url { get; set; } = "";
@@ -46,6 +42,15 @@
     private string ProgressStyle =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"width: {ProgressPercent:0.##}%");
 
+    private static string FormatTime(double seconds)
+    {
+        if (!double.IsFinite(seconds) || seconds < 0) seconds = 0;
+        var total = (int)Math.Floor(seconds);
+        var m = total / 60;
+        var s = total % 60;
+        return $"{m}:{s:00}";
+    }
+
     private async Task Toggle()
     {
         if (_playing)
@@ -56,12 +61,27 @@
         }
         else
         {
-            // Zatrzymaj każde inne odtwarzanie na stronie
+            // Zatrzymaj każde inne odtwarzanie na stronie.
             await JS.InvokeVoidAsync("medytaoAudio.pauseAll");
             await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef);
             _playing = true;
             StartProgressTimer();
         }
+    }
+
+    private async Task HandleLoadedMetadata()
+    {
+        // Pozyskaj długość, żeby pasek miał sens jeszcze przed playem.
+        try
+        {
+            var p = await JS.InvokeAsync<ProgressDto?>("medytaoAudio.getProgress", _audioRef);
+            if (p is not null)
+            {
+                _duration = p.duration;
+                StateHasChanged();
+            }
+        }
+        catch { }
     }
 
     private void HandleEnded()
@@ -118,18 +138,16 @@
 
 <style>
     .audio-preview-wrap {
-        position: relative;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
+        gap: 8px;
     }
     .audio-preview-btn {
         background: none;
         border: 1px solid var(--color-border-secondary);
         border-radius: 50%;
         width: 28px; height: 28px;
+        flex: 0 0 auto;
         display: inline-flex; align-items: center; justify-content: center;
         cursor: pointer;
         font-size: 11px;
@@ -147,18 +165,18 @@
         border-color: var(--color-text-info);
     }
     .audio-preview-progress {
-        position: absolute;
-        left: 0; right: 0;
-        bottom: -6px;
-        height: 2px;
+        flex: 0 0 auto;
+        width: 120px;
+        height: 6px;
         background: var(--color-border-tertiary);
-        border-radius: 1px;
+        border-radius: 3px;
         overflow: hidden;
-        pointer-events: none;
+        border: 1px solid var(--color-border-tertiary);
     }
     .audio-preview-progress-fill {
         display: block;
         height: 100%;
+        width: 0;
         background: var(--color-text-info);
         transition: width 0.18s linear;
     }
