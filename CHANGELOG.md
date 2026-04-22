@@ -3,7 +3,17 @@
 Format oparty o [Keep a Changelog](https://keepachangelog.com/),
 wersjonowanie [SemVer](https://semver.org/).
 
-## [0.11.0]
+## [0.11.0] — 2026-04-22
+
+### Changed
+- `Track.Loop` (bool) zastąpiony przez `Track.LoopCount` (int):
+  - `0` = loop forever (dawne `Loop = true`)
+  - `1` = odtwórz raz (default)
+  - `N` = odtwórz N razy
+- API: endpointy create/update track przyjmują `loopCount` zamiast `loop`
+- `TrackDto` i `TrackCard` zaktualizowane do `LoopCount`
+- `LayerPanel` przekazuje `BlocksSequence` do `TrackCard` — ostrzeżenie gdy track z `LoopCount=0` blokuje kolejne tracki w sekwencji
+- Schemat DB: kolumna `Loop` (bit) → `LoopCount` (int), domyślna wartość 1
 
 ### Migration notes
 Breaking DB schema change — reset dev database before first run:
