@@ -27,6 +27,12 @@
 
 @code {
     [Parameter, EditorRequired] public string Url { get; set; } = "";
+    /// <summary>
+    /// Głośność odtwarzania preview (0–1). Odświeża się na żywo, gdy user
+    /// rusza suwakiem — komponent łapie zmianę w OnParametersSetAsync
+    /// i puka do JS, żeby aktualny <audio> natychmiast zmienił wolumen.
+    /// </summary>
+    [Parameter] public float Volume { get; set; } = 1.0f;
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
@@ -34,6 +40,7 @@
     private bool _playing;
     private double _currentTime;
     private double _duration;
+    private float _lastAppliedVolume = float.NaN;
     private System.Timers.Timer? _progressTimer;
 
     private double ProgressPercent =>
@@ -63,9 +70,25 @@
         {
             // Zatrzymaj każde inne odtwarzanie na stronie.
             await JS.InvokeVoidAsync("medytaoAudio.pauseAll");
-            await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef);
+            await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef, Volume);
+            _lastAppliedVolume = Volume;
             _playing = true;
             StartProgressTimer();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Jeżeli rodzic zmienił Volume w czasie gdy preview gra,
+        // puknij JS-owi, żeby zastosował nową głośność na żywo.
+        if (_playing && Math.Abs(_lastAppliedVolume - Volume) > 0.0001f)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("medytaoAudio.setVolume", _audioRef, Volume);
+                _lastAppliedVolume = Volume;
+            }
+            catch { }
         }
     }
 

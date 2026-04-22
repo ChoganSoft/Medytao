@@ -13,11 +13,12 @@
         <div class="layer-controls">
             <label class="volume-label">Vol</label>
             <input type="range" min="0" max="1" step="0.01"
-                   value="@Layer.Volume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                   value="@_localVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                   @oninput="e => DragVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                    @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                    class="medytao-slider volume-slider"
-                   style="--slider-fill: @((int)(Layer.Volume * 100))%" />
-            <span class="volume-value">@((int)(Layer.Volume * 100))%</span>
+                   style="--slider-fill: @((int)(_localVolume * 100))%" />
+            <span class="volume-value">@((int)(_localVolume * 100))%</span>
             <button class="mute-btn @(Layer.Muted ? "active" : "")" @onclick="ToggleMute" title="Mute layer">
                 @(Layer.Muted ? "🔇" : "🔊")
             </button>
@@ -59,8 +60,25 @@
     [Parameter] public EventCallback OnLayerChanged { get; set; }
     [Parameter] public EventCallback OnOpenAssetPicker { get; set; }
 
+    // Lokalny cache — aktualizowany na każdy oninput (live), żeby suwak
+    // nie skakał do poprzedniej wartości podczas drag'u (parent refetchuje
+    // DTO dopiero po zwolnieniu przycisku).
+    private float _localVolume;
+
+    protected override void OnParametersSet()
+    {
+        _localVolume = Layer.Volume;
+    }
+
+    private async Task DragVolume(float volume)
+    {
+        _localVolume = volume;
+        await PlaybackSession.SetLayerVolumeAsync(Layer.Id, volume);
+    }
+
     private async Task UpdateVolume(float volume)
     {
+        _localVolume = volume;
         // Live-update najpierw, żeby user usłyszał różnicę natychmiast —
         // persist do bazy i odświeżenie DTO mogą trochę zająć.
         await PlaybackSession.SetLayerVolumeAsync(Layer.Id, volume);
