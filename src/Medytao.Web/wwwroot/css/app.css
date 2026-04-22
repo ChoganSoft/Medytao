@@ -74,3 +74,57 @@ input:focus, textarea:focus { border-color: var(--color-border-primary); }
     background: var(--color-background-primary) !important;
     color: var(--color-text-primary) !important;
 }
+
+/* ── Volume slider — pasuje wizualnie do audio-preview-progress.
+   Wypełnienie od lewej kontrolowane zmienną --slider-fill (np. "42%"). ── */
+input[type=range].medytao-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border: 1px solid var(--color-border-tertiary);
+    border-radius: 3px;
+    background: linear-gradient(
+        to right,
+        var(--color-text-info) 0%,
+        var(--color-text-info) var(--slider-fill, 0%),
+        var(--color-border-tertiary) var(--slider-fill, 0%),
+        var(--color-border-tertiary) 100%);
+    outline: none;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    vertical-align: middle;
+}
+input[type=range].medytao-slider::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px; background: transparent;
+}
+input[type=range].medytao-slider::-moz-range-track {
+    height: 6px; border-radius: 3px; background: transparent; border: none;
+}
+input[type=range].medytao-slider::-moz-range-progress {
+    height: 6px; border-radius: 3px; background: transparent;
+}
+input[type=range].medytao-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: var(--color-text-info);
+    border: 2px solid var(--color-background-primary);
+    box-shadow: 0 0 0 1px var(--color-border-secondary);
+    cursor: grab;
+    transition: transform 0.1s;
+}
+input[type=range].medytao-slider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--color-text-info);
+    border: 2px solid var(--color-background-primary);
+    box-shadow: 0 0 0 1px var(--color-border-secondary);
+    cursor: grab;
+    transition: transform 0.1s;
+}
+input[type=range].medytao-slider:active::-webkit-slider-thumb { transform: scale(1.1); cursor: grabbing; }
+input[type=range].medytao-slider:active::-moz-range-thumb { transform: scale(1.1); cursor: grabbing; }
+input[type=range].medytao-slider:focus-visible { box-shadow: 0 0 0 2px var(--color-border-info); }

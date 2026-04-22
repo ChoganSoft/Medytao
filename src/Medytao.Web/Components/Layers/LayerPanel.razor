@@ -14,7 +14,8 @@
             <input type="range" min="0" max="1" step="0.01"
                    value="@Layer.Volume"
                    @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!))"
-                   class="volume-slider" />
+                   class="medytao-slider volume-slider"
+                   style="--slider-fill: @((int)(Layer.Volume * 100))%" />
             <span class="volume-value">@((int)(Layer.Volume * 100))%</span>
             <button class="mute-btn @(Layer.Muted ? "active" : "")" @onclick="ToggleMute" title="Mute layer">
                 @(Layer.Muted ? "🔇" : "🔊")
@@ -102,7 +103,7 @@
 
     .layer-controls { display: flex; align-items: center; gap: 8px; flex: 1; }
     .volume-label { font-size: 12px; color: var(--color-text-secondary); }
-    .volume-slider { flex: 1; max-width: 140px; accent-color: var(--color-text-primary); }
+    .volume-slider { flex: 1; max-width: 160px; }
     .volume-value { font-size: 12px; color: var(--color-text-secondary); min-width: 32px; }
 
     .mute-btn {

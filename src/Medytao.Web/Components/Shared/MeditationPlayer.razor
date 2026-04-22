@@ -52,7 +52,7 @@
                                     <span>@trackCount track@(trackCount == 1 ? "" : "s") in sequence</span>
                                 }
                             </div>
-                            @if (trackCount > 0 && _playing)
+                            @if (trackCount > 0)
                             {
                                 <div class="player-layer-progress">
                                     <div class="player-layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
