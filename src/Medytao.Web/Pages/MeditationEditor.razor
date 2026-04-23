@@ -1,7 +1,9 @@
 @page "/meditations/{Id:guid}"
+@implements IDisposable
 @inject MeditationService MeditationSvc
 @inject AuthService Auth
 @inject NavigationManager Nav
+@inject PlaybackSessionService PlaybackSession
 
 @if (_meditation is null)
 {
@@ -22,12 +24,16 @@ else
                 {
                     <button class="btn-secondary" @onclick="Publish">Publish</button>
                 }
-                <button class="btn-primary" @onclick="OpenPreview">▶ Preview</button>
+                <button class="btn-primary play-toggle @(PlaybackSession.IsPlaying ? "playing" : "")"
+                        @onclick="TogglePlayback"
+                        disabled="@(!HasAnyTracks)">
+                    @(PlaybackSession.IsPlaying ? "◼ Stop" : "▶ Play")
+                </button>
             </div>
         </div>
 
         <!-- Four layer canvas -->
-        <div class="canvas-area @(_previewOpen ? "with-player" : "")">
+        <div class="canvas-area">
             @foreach (var layer in _meditation.Layers.OrderBy(l => l.Type))
             {
                 <LayerPanel
@@ -45,19 +51,15 @@ else
             OnPick="HandleAssetPicked"
             OnClose="() => _assetPickerLayerId = null" />
     }
-
-    <!-- Meditation preview player -->
-    <MeditationPlayer
-        Meditation="_meditation"
-        Open="_previewOpen"
-        OnClose="() => _previewOpen = false" />
 }
 
 @code {
     [Parameter] public Guid Id { get; set; }
     private MeditationDetailDto? _meditation;
     private Guid? _assetPickerLayerId;
-    private bool _previewOpen;
+
+    private bool HasAnyTracks =>
+        _meditation is not null && _meditation.Layers.Any(l => l.Tracks.Any());
 
     protected override async Task OnInitializedAsync()
     {
@@ -68,7 +70,10 @@ else
             return;
         }
         _meditation = await MeditationSvc.GetByIdAsync(Id);
+        PlaybackSession.OnChanged += HandleSessionChanged;
     }
+
+    private void HandleSessionChanged() => InvokeAsync(StateHasChanged);
 
     private void GoBack() => Nav.NavigateTo("/");
 
@@ -78,7 +83,18 @@ else
         _meditation = await MeditationSvc.GetByIdAsync(Id);
     }
 
-    private void OpenPreview() => _previewOpen = true;
+    private async Task TogglePlayback()
+    {
+        if (_meditation is null) return;
+        if (PlaybackSession.IsPlaying)
+        {
+            await PlaybackSession.StopAsync();
+        }
+        else
+        {
+            await PlaybackSession.StartAsync(_meditation);
+        }
+    }
 
     private void OpenAssetPicker(Guid layerId) => _assetPickerLayerId = layerId;
 
@@ -94,6 +110,15 @@ else
     {
         _meditation = await MeditationSvc.GetByIdAsync(Id);
         StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        PlaybackSession.OnChanged -= HandleSessionChanged;
+        // Sesja playbacku jest scoped (singleton w WASM) — nie zatrzymujemy jej
+        // tutaj, żeby nawigacja do innego widoku jej nie ubiła. Jeśli user
+        // chce ciszy, klika Stop.
+        // W praktyce i tak Dispose wołamy tylko przy przejściu gdzie indziej.
     }
 }
 
@@ -133,9 +158,6 @@ else
         padding: 24px;
         display: flex; flex-direction: column; gap: 16px;
     }
-    /* Gdy pasek playera jest otwarty, dołóż miejsca na dole żeby ostatnia
-       warstwa nie była zakryta przez zadokowany pasek. */
-    .canvas-area.with-player { padding-bottom: 110px; }
 
     .loading { display: flex; align-items: center; justify-content: center; height: 100vh; color: var(--color-text-secondary); }
 
@@ -143,6 +165,10 @@ else
         padding: 8px 16px; border-radius: 6px;
         background: var(--color-text-primary); color: var(--color-background-primary);
         border: none; font-size: 13px; font-weight: 500; cursor: pointer;
+    }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary.play-toggle.playing {
+        background: var(--color-text-info);
     }
     .btn-secondary {
         padding: 8px 16px; border-radius: 6px;

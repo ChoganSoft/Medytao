@@ -2,7 +2,7 @@
 @inject MeditationService MeditationSvc
 @inject PlaybackSessionService PlaybackSession
 
-<div class="track-card @(_expanded ? "expanded" : "")">
+<div class="track-card @(_expanded ? "expanded" : "") @(IsCurrent ? "current" : "")">
     <!-- Main row -->
     <div class="track-row" @onclick="ToggleExpand">
         <span class="drag-handle" @onclick:stopPropagation="true">⠿</span>
@@ -89,6 +89,11 @@
     /// that will never play because of that. Shown as a subtle ∞ badge.
     /// </summary>
     [Parameter] public bool BlocksSequence { get; set; }
+    /// <summary>
+    /// True, gdy playback leci i akurat ten track jest aktywny w swojej warstwie.
+    /// Rysujemy subtelny akcent żeby było wiadomo "co teraz słyszę".
+    /// </summary>
+    [Parameter] public bool IsCurrent { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public EventCallback OnRemove { get; set; }
 
@@ -158,8 +163,14 @@
 }
 
 <style>
-    .track-card { border-bottom: 1px solid var(--color-border-tertiary); }
+    .track-card {
+        border-bottom: 1px solid var(--color-border-tertiary);
+        border-left: 3px solid transparent;
+        transition: border-left-color 0.15s, background 0.15s;
+    }
     .track-card:last-child { border-bottom: none; }
+    .track-card.current { border-left-color: var(--color-text-info); }
+    .track-card.current .track-row { background: var(--color-background-secondary); }
 
     .track-row {
         display: flex; align-items: center; gap: 12px;

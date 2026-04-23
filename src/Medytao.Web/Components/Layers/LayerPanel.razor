@@ -1,4 +1,5 @@
 @using Medytao.Shared.Models
+@implements IDisposable
 @inject MeditationService MeditationSvc
 @inject PlaybackSessionService PlaybackSession
 
@@ -12,12 +13,24 @@
         </div>
         <div class="layer-controls">
             <label class="volume-label">Vol</label>
-            <input type="range" min="0" max="1" step="0.01"
-                   value="@_localVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                   @oninput="e => DragVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
-                   @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
-                   class="medytao-slider volume-slider"
-                   style="--slider-fill: @((int)(_localVolume * 100))%" />
+            <div class="volume-stack">
+                <input type="range" min="0" max="1" step="0.01"
+                       value="@_localVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => DragVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                       @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                       class="medytao-slider volume-slider"
+                       style="--slider-fill: @((int)(_localVolume * 100))%" />
+                @{
+                    var progress = PlaybackSession.GetProgress(Layer.Id);
+                    var showProgress = PlaybackSession.IsPlaying && Layer.Tracks.Any();
+                }
+                @if (showProgress)
+                {
+                    <div class="layer-progress" title="@ProgressTooltip(progress)">
+                        <div class="layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
+                    </div>
+                }
+            </div>
             <span class="volume-value">@((int)(_localVolume * 100))%</span>
             <button class="mute-btn @(Layer.Muted ? "active" : "")" @onclick="ToggleMute" title="Mute layer">
                 @(Layer.Muted ? "🔇" : "🔊")
@@ -48,6 +61,7 @@
                     Track="track"
                     LayerId="Layer.Id"
                     BlocksSequence="blocks"
+                    IsCurrent="@(progress is not null && !progress.Finished && progress.TrackIndex == i)"
                     OnChanged="OnLayerChanged"
                     OnRemove="OnLayerChanged" />
             }
@@ -64,6 +78,13 @@
     // nie skakał do poprzedniej wartości podczas drag'u (parent refetchuje
     // DTO dopiero po zwolnieniu przycisku).
     private float _localVolume;
+
+    protected override void OnInitialized()
+    {
+        PlaybackSession.OnChanged += HandleSessionChanged;
+    }
+
+    private void HandleSessionChanged() => InvokeAsync(StateHasChanged);
 
     protected override void OnParametersSet()
     {
@@ -92,6 +113,35 @@
         await PlaybackSession.SetLayerMutedAsync(Layer.Id, newMuted);
         await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, newMuted);
         await OnLayerChanged.InvokeAsync();
+    }
+
+    private static string LayerProgressStyle(PlaybackSessionService.LayerProgress? p)
+    {
+        var pct = (p is not null && p.Duration > 0)
+            ? Math.Clamp(p.CurrentTime / p.Duration * 100.0, 0, 100)
+            : 0;
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"width: {pct:0.##}%");
+    }
+
+    private static string ProgressTooltip(PlaybackSessionService.LayerProgress? p)
+    {
+        if (p is null) return "";
+        if (p.Finished) return "Finished";
+        return $"Track {p.TrackIndex + 1}/{p.TrackCount} · {FormatTime(p.CurrentTime)} / {FormatTime(p.Duration)}";
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        if (!double.IsFinite(seconds) || seconds < 0) seconds = 0;
+        var total = (int)Math.Floor(seconds);
+        var m = total / 60;
+        var s = total % 60;
+        return $"{m}:{s:00}";
+    }
+
+    public void Dispose()
+    {
+        PlaybackSession.OnChanged -= HandleSessionChanged;
     }
 
     private static string LayerIcon(string type) => type switch
@@ -127,8 +177,27 @@
 
     .layer-controls { display: flex; align-items: center; gap: 8px; flex: 1; }
     .volume-label { font-size: 12px; color: var(--color-text-secondary); }
-    .volume-slider { flex: 1; max-width: 160px; }
+    .volume-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+        max-width: 220px;
+    }
+    .volume-slider { width: 100%; max-width: none; }
     .volume-value { font-size: 12px; color: var(--color-text-secondary); min-width: 32px; }
+
+    .layer-progress {
+        height: 3px;
+        background: var(--color-border-tertiary);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .layer-progress-fill {
+        height: 100%;
+        background: var(--color-text-info);
+        transition: width 0.2s linear;
+    }
 
     .mute-btn {
         background: none; border: 1px solid var(--color-border-tertiary);
