@@ -39,13 +39,19 @@
                 <div class="meditation-card @(isPlayingThis ? "playing" : "")">
                     <div class="card-header">
                         <div class="card-avatar" aria-hidden="true">
+                            @* Medytująca postać w lotosie: głowa, korpus z ramionami
+                               tworzącymi klamrę, dłonie na kolanach, skrzyżowane nogi.
+                               Avatar jest dekoracyjny — aria-hidden. *@
                             <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
                                 <circle cx="32" cy="32" r="30" fill="#0F2538" stroke="#C5A56C" stroke-width="2" />
-                                @* Uproszczony lotos: centralny płatek + dwa boczne.
-                                   Ornament dekoracyjny — nie jest elementem interakcji, stąd aria-hidden. *@
-                                <path d="M32 18 Q26 26 28 36 Q32 40 36 36 Q38 26 32 18 Z" fill="#C5A56C" />
-                                <path d="M20 30 Q20 38 26 42 Q32 40 32 36 Q28 32 20 30 Z" fill="#C5A56C" opacity="0.82" />
-                                <path d="M44 30 Q44 38 38 42 Q32 40 32 36 Q36 32 44 30 Z" fill="#C5A56C" opacity="0.82" />
+                                <g fill="none" stroke="#C5A56C" stroke-width="1.8"
+                                   stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="32" cy="20" r="4.5" />
+                                    <path d="M 28 27 C 22 28, 18 34, 20 44" />
+                                    <path d="M 36 27 C 42 28, 46 34, 44 44" />
+                                    <path d="M 22 43 Q 32 39, 42 43" />
+                                    <path d="M 17 47 Q 32 43, 47 47 Q 47 50, 32 49 Q 17 50, 17 47 Z" />
+                                </g>
                             </svg>
                         </div>
                         <div class="card-meta-rows">
@@ -322,6 +328,9 @@
         border-radius: 10px;
         /* Extra padding-bottom żeby stopka z przyciskami nie zachodziła na footer-meta. */
         padding: 20px 20px 56px;
+        /* overflow: hidden żeby złoty pasek rozciągnięty ujemnym margin-x
+           nie wyszedł poza zaokrąglone rogi karty. */
+        overflow: hidden;
         transition: border-color 0.15s, box-shadow 0.15s;
     }
     .meditation-card:hover { border-color: var(--color-border-secondary); }
@@ -361,12 +370,13 @@
     }
 
     /* ── Złoty pasek z 4 kategoriami warstw ───────────────────────────────── */
+    /* Ujemny margin-x == padding karty (20px) — pasek sięga lewej i prawej
+       krawędzi karty. overflow: hidden na .meditation-card klipuje rogi. */
     .gold-bar {
         display: flex; justify-content: space-around; align-items: center;
         background: #C5A56C;
-        border-radius: 6px;
-        padding: 10px 8px;
-        margin-bottom: 14px;
+        padding: 12px 20px;
+        margin: 0 -20px 16px;
     }
     .gold-bar-item {
         display: inline-flex; align-items: center; gap: 6px;
