@@ -1,7 +1,9 @@
 @page "/"
+@implements IDisposable
 @inject MeditationService MeditationSvc
 @inject AuthService Auth
 @inject NavigationManager Nav
+@inject PlaybackSessionService Playback
 
 <div class="page-wrap">
     <div class="page-header">
@@ -29,7 +31,43 @@
         <div class="meditation-grid">
             @foreach (var m in _meditations)
             {
-                <div class="meditation-card" @onclick="() => Open(m.Id)">
+                var isPlayingThis = Playback.CurrentMeditationId == m.Id;
+                var isLoadingThis = _loadingId == m.Id;
+                var fill = isPlayingThis ? OverallFraction() : 0d;
+                var dashoffset = RingCircumference - (fill * RingCircumference);
+
+                <div class="meditation-card @(isPlayingThis ? "playing" : "")">
+                    <div class="card-actions">
+                        @if (m.DurationMs > 0)
+                        {
+                            <div class="play-btn-ring" title="@(isPlayingThis ? "Stop" : "Play")">
+                                <svg class="play-ring" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                                    <circle class="ring-bg" cx="16" cy="16" r="13" />
+                                    <circle class="ring-fill @(isPlayingThis ? "active" : "")"
+                                            cx="16" cy="16" r="13"
+                                            style="stroke-dasharray: @RingCircumferenceCss; stroke-dashoffset: @dashoffset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+                                </svg>
+                                <button class="play-btn @(isPlayingThis ? "playing" : "")"
+                                        @onclick="() => TogglePlay(m)"
+                                        disabled="@isLoadingThis">
+                                    @if (isLoadingThis)
+                                    {
+                                        <span class="spinner"></span>
+                                    }
+                                    else if (isPlayingThis)
+                                    {
+                                        <text>◼</text>
+                                    }
+                                    else
+                                    {
+                                        <text>▶</text>
+                                    }
+                                </button>
+                            </div>
+                        }
+                        <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
+                    </div>
+
                     <div class="card-status @m.Status.ToLower()">@m.Status</div>
                     <div class="card-title">@m.Title</div>
                     @if (!string.IsNullOrEmpty(m.Description))
@@ -69,6 +107,15 @@
     private bool _loading = true, _creating;
     private string _newTitle = "", _newDesc = "";
 
+    // Id medytacji, dla której trwa fetch detailu przed StartAsync — blokuje podwójne kliknięcia
+    // i pozwala wyrysować spinner. Null gdy nic nie ładujemy.
+    private Guid? _loadingId;
+
+    // 2 * π * r, gdzie r = 13. Obwód okręgu ringa w px — używany jako stroke-dasharray
+    // i baza do wyliczenia dashoffset z fraction.
+    private const double RingCircumference = 81.68;
+    private const string RingCircumferenceCss = "81.68";
+
     protected override async Task OnInitializedAsync()
     {
         // Wczytaj token z localStorage i przypnij do HttpClient
@@ -93,6 +140,52 @@
             return;
         }
         _loading = false;
+
+        // Ring + ikonka play muszą się odświeżać na każdy tick PlaybackSession.
+        Playback.OnChanged += HandlePlaybackChanged;
+    }
+
+    private void HandlePlaybackChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Playback.OnChanged -= HandlePlaybackChanged;
+    }
+
+    private double OverallFraction()
+    {
+        var p = Playback.GetOverallProgress();
+        return p.Total > 0 ? Math.Clamp(p.Current / p.Total, 0, 1) : 0;
+    }
+
+    private async Task TogglePlay(MeditationSummaryDto m)
+    {
+        // Klik na aktualnie graną → po prostu stop.
+        if (Playback.CurrentMeditationId == m.Id)
+        {
+            await Playback.StopAsync();
+            return;
+        }
+
+        // Inna medytacja → pobierz detail (Summary nie ma warstw) i wystartuj.
+        // StartAsync sam zatrzyma poprzednią sesję, więc nie trzeba ręcznego Stop.
+        if (_loadingId is not null) return; // Zignoruj dopóki trwa poprzedni fetch.
+        _loadingId = m.Id;
+        try
+        {
+            var detail = await MeditationSvc.GetByIdAsync(m.Id);
+            if (detail is null) return;
+            await Playback.StartAsync(detail);
+        }
+        catch
+        {
+            // Zjadamy błąd sieciowy — user zobaczy po prostu że nic się nie stało.
+            // W przyszłości można dodać toast.
+        }
+        finally
+        {
+            _loadingId = null;
+        }
     }
 
     private void CreateNew() { _newTitle = ""; _newDesc = ""; _creating = true; }
@@ -117,12 +210,101 @@
 
     .meditation-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
     .meditation-card {
+        position: relative;
         background: var(--color-background-primary);
         border: 1px solid var(--color-border-tertiary);
         border-radius: 10px; padding: 20px;
-        cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+        transition: border-color 0.15s, box-shadow 0.15s;
     }
     .meditation-card:hover { border-color: var(--color-border-secondary); }
+    .meditation-card.playing { border-color: var(--color-text-info); }
+
+    /* ── Akcje w prawym górnym rogu: play+ring i edit ─────────────────────── */
+    .card-actions {
+        position: absolute;
+        top: 12px; right: 12px;
+        display: flex; align-items: center; gap: 4px;
+    }
+
+    /* Wrapper trzyma ring i button jeden na drugim — struktura zerżnięta z
+       AudioPreviewButton, patrz Components/Shared/AudioPreviewButton.razor. */
+    .play-btn-ring {
+        position: relative;
+        width: 32px; height: 32px;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .play-ring {
+        position: absolute; inset: 0;
+        width: 32px; height: 32px;
+        transform: rotate(-90deg); /* 0% od góry, nie od 3 o'clock */
+        pointer-events: none;
+    }
+    .play-ring .ring-bg {
+        fill: none;
+        stroke: var(--color-border-tertiary);
+        stroke-width: 2.5;
+        opacity: 0.5;
+    }
+    .play-ring .ring-fill {
+        fill: none;
+        stroke: var(--color-text-info);
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.18s linear;
+    }
+    .play-ring .ring-fill.active { opacity: 1; }
+
+    .play-btn {
+        position: relative; /* zapewnia stacking nad SVG mimo że SVG jest absolute */
+        width: 22px; height: 22px;
+        border: none; background: transparent;
+        color: var(--color-text-secondary);
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 10px; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        transition: background 0.15s, color 0.15s;
+    }
+    .play-btn:hover:not(:disabled) {
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+    .play-btn.playing {
+        background: var(--color-text-info);
+        color: var(--color-background-primary);
+    }
+    .play-btn:disabled { cursor: default; opacity: 0.7; }
+
+    .edit-btn {
+        width: 28px; height: 28px;
+        border: none; background: transparent;
+        color: var(--color-text-secondary);
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 14px; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        transition: background 0.15s, color 0.15s;
+    }
+    .edit-btn:hover {
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+
+    /* Spinner dla stanu loading (między klikiem a rozpoczęciem odtwarzania,
+       kiedy dociągamy MeditationDetailDto z API). */
+    .spinner {
+        width: 10px; height: 10px;
+        border: 1.5px solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        display: inline-block;
+    }
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
 
     .card-status {
         display: inline-block; font-size: 11px; font-weight: 500;

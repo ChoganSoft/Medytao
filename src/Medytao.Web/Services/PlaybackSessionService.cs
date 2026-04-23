@@ -17,6 +17,7 @@ public sealed class PlaybackSessionService : IAsyncDisposable
 {
     private readonly IJSRuntime _js;
     private string? _sessionId;
+    private Guid? _meditationId;
     private System.Timers.Timer? _progressTimer;
     private Dictionary<Guid, LayerProgress> _progressByLayer = new();
 
@@ -30,8 +31,34 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     /// <summary>Czy w ogóle coś gra (alias dla <see cref="IsActive"/> — nazwa dla czytelności w UI).</summary>
     public bool IsPlaying => _sessionId is not null;
 
+    /// <summary>
+    /// Id medytacji, która aktualnie leci — null gdy brak aktywnej sesji.
+    /// Używane przez listę medytacji żeby wiedzieć, którą kartę podświetlić jako "grająca".
+    /// </summary>
+    public Guid? CurrentMeditationId => _meditationId;
+
     public LayerProgress? GetProgress(Guid layerId) =>
         _progressByLayer.TryGetValue(layerId, out var p) ? p : null;
+
+    /// <summary>
+    /// Zagregowany postęp całej medytacji — max(CurrentTime) i max(Duration) po warstwach.
+    /// Loopy warstw powodują, że pełna ścisłość jest niemożliwa bez master clocka w JS,
+    /// ale "jak daleko jesteśmy względem najdłuższej warstwy" to dobry intuicyjny wskaźnik
+    /// dla karty medytacji. Gdy brak progressów — zwraca zera.
+    /// </summary>
+    public (double Current, double Total, bool Finished) GetOverallProgress()
+    {
+        if (_progressByLayer.Count == 0) return (0, 0, false);
+        double maxCurrent = 0, maxDuration = 0;
+        bool allFinished = true;
+        foreach (var p in _progressByLayer.Values)
+        {
+            if (p.CurrentTime > maxCurrent) maxCurrent = p.CurrentTime;
+            if (p.Duration > maxDuration) maxDuration = p.Duration;
+            if (!p.Finished) allFinished = false;
+        }
+        return (maxCurrent, maxDuration, allFinished);
+    }
 
     public async Task StartAsync(MeditationDetailDto meditation)
     {
@@ -63,10 +90,12 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         try
         {
             _sessionId = await _js.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers);
+            _meditationId = meditation.Id;
         }
         catch (Exception ex)
         {
             _sessionId = null;
+            _meditationId = null;
             try { await _js.InvokeVoidAsync("console.error", "[PlaybackSession] startSession failed", ex.Message); } catch { }
             return;
         }
@@ -80,6 +109,7 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         StopProgressTimer();
         var sid = _sessionId;
         _sessionId = null;
+        _meditationId = null;
         _progressByLayer = new();
 
         if (sid is not null)
@@ -138,6 +168,16 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                 if (p.LayerId != Guid.Empty) map[p.LayerId] = p;
             }
             _progressByLayer = map;
+
+            // Gdy wszystkie warstwy dobiegły końca — zatrzymaj sesję samoczynnie.
+            // Dzięki temu ring na karcie medytacji i w edytorze wraca do stanu spoczynku
+            // bez ręcznego stopu. Sprawdzamy sid żeby nie wyścigać się z ręcznym StopAsync.
+            if (items.Length > 0 && sid == _sessionId && items.All(p => p.Finished))
+            {
+                await StopAsync();
+                return;
+            }
+
             OnChanged?.Invoke();
         }
         catch
