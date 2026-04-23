@@ -38,33 +38,35 @@
 
                 <div class="meditation-card @(isPlayingThis ? "playing" : "")">
                     <div class="card-actions">
-                        @if (m.DurationMs > 0)
-                        {
-                            <div class="play-btn-ring" title="@(isPlayingThis ? "Stop" : "Play")">
-                                <svg class="play-ring" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                                    <circle class="ring-bg" cx="16" cy="16" r="13" />
-                                    <circle class="ring-fill @(isPlayingThis ? "active" : "")"
-                                            cx="16" cy="16" r="13"
-                                            style="stroke-dasharray: @RingCircumferenceCss; stroke-dashoffset: @dashoffset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
-                                </svg>
-                                <button class="play-btn @(isPlayingThis ? "playing" : "")"
-                                        @onclick="() => TogglePlay(m)"
-                                        disabled="@isLoadingThis">
-                                    @if (isLoadingThis)
-                                    {
-                                        <span class="spinner"></span>
-                                    }
-                                    else if (isPlayingThis)
-                                    {
-                                        <text>◼</text>
-                                    }
-                                    else
-                                    {
-                                        <text>▶</text>
-                                    }
-                                </button>
-                            </div>
-                        }
+                        @* Play zawsze widoczny — DurationMs w Summary DTO jest wyliczany tylko gdy
+                           ktoś wywoła UpdateMeditationCommand (czego frontend obecnie nie robi),
+                           więc w praktyce zawsze ==0 i ukrywanie buttona ukrywa go wszędzie.
+                           Klik na medytację bez warstw: StartAsync guard layers.Length==0 → no-op.
+                           TODO: gdy backend zacznie liczyć duration z warstw — przywrócić warunek. *@
+                        <div class="play-btn-ring" title="@(isPlayingThis ? "Stop" : "Play")">
+                            <svg class="play-ring" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                                <circle class="ring-bg" cx="16" cy="16" r="13" />
+                                <circle class="ring-fill @(isPlayingThis ? "active" : "")"
+                                        cx="16" cy="16" r="13"
+                                        style="stroke-dasharray: @RingCircumferenceCss; stroke-dashoffset: @dashoffset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+                            </svg>
+                            <button class="play-btn @(isPlayingThis ? "playing" : "")"
+                                    @onclick="() => TogglePlay(m)"
+                                    disabled="@isLoadingThis">
+                                @if (isLoadingThis)
+                                {
+                                    <span class="spinner"></span>
+                                }
+                                else if (isPlayingThis)
+                                {
+                                    <text>◼</text>
+                                }
+                                else
+                                {
+                                    <text>▶</text>
+                                }
+                            </button>
+                        </div>
                         <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
                     </div>
 
