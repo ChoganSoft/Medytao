@@ -74,10 +74,13 @@ button { font-family: inherit; }
 input, textarea { font-family: inherit; outline: none; }
 input:focus, textarea:focus { border-color: var(--color-border-primary); }
 
-/* Active nav link styling for Blazor NavLink */
+/* Active nav link styling for Blazor NavLink. Sidebar ma stałe ciemne tło
+   (#012e48) niezależnie od motywu, więc aktywny element podświetlamy półprzezroczystą
+   bielą — nie tokenami motywu. !important dlatego, że scoped CSS w MainLayout
+   nie zawsze bije selektor Blazor NavLink. */
 .nav-item.active {
-    background: var(--color-background-primary) !important;
-    color: var(--color-text-primary) !important;
+    background: rgba(255,255,255,0.1) !important;
+    color: #ffffff !important;
 }
 
 /* ── Volume slider — pasuje wizualnie do audio-preview-progress.
