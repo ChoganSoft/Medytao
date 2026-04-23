@@ -109,7 +109,9 @@
                             </button>
                         </div>
                         <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
-                        <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">×</button>
+                        <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
                     </div>
                 </div>
             }
@@ -470,8 +472,9 @@
         background: var(--color-background-secondary);
         color: var(--color-text-primary);
     }
-    /* Delete ma większą ikonę (×) i czerwony hover żeby odróżnić destructive action. */
-    .delete-btn { font-size: 22px; }
+    /* Delete używa FA xmark (ta sama rodzina co ikony na złotym pasku), więc
+       waga wizualna pasuje do reszty. Czerwony hover odróżnia destructive action. */
+    .delete-btn { font-size: 18px; }
     .delete-btn:hover {
         background: var(--color-background-danger, rgba(220, 53, 69, 0.12));
         color: var(--color-text-danger, #dc3545);
