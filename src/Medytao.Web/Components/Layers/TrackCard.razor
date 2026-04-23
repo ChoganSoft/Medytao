@@ -7,6 +7,8 @@
     <div class="track-row" @onclick="ToggleExpand">
         <span class="drag-handle" @onclick:stopPropagation="true">⠿</span>
 
+        <AudioPreviewButton Url="@Track.Asset.Url" Volume="_volume" />
+
         <div class="track-info">
             <span class="track-filename">
                 @Track.Asset.FileName
@@ -22,8 +24,6 @@
         </div>
 
         <div class="track-quick-controls" @onclick:stopPropagation="true">
-            <AudioPreviewButton Url="@Track.Asset.Url" Volume="_volume" />
-
             <input type="range" min="0" max="1" step="0.01"
                    value="@_volume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                    @oninput="e => OnVolumeInput(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
