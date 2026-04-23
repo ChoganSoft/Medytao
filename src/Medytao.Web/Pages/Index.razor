@@ -175,11 +175,13 @@
     // Kolejność i ikony warstw na złotym pasku. Stringi-klucze pasują do enum
     // LayerType.ToString() serializowanego w MeditationSummaryDto.TracksByLayerType.
     // Icon to klasa Font Awesome (CDN dociągany w wwwroot/index.html).
+    // Kolejność: Text → Music → Nature → Fx — ta sama co w edytorze
+    // (MeditationEditor.razor → LayerDisplayOrder).
     private static readonly (string Key, string Icon)[] LayerCategories =
     {
+        ("Text", "fa-solid fa-comment"),
         ("Music", "fa-solid fa-music"),
         ("Nature", "fa-solid fa-wind"),
-        ("Text", "fa-solid fa-comment"),
         ("Fx", "fa-solid fa-drum"),
     };
 

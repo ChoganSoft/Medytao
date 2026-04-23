@@ -34,7 +34,11 @@ else
 
         <!-- Four layer canvas -->
         <div class="canvas-area">
-            @foreach (var layer in _meditation.Layers.OrderBy(l => l.Type))
+            @* Kolejność wyświetlania warstw ustalona designowo: Text → Music → Nature → Fx.
+               Ta sama sekwencja leży w Pages/Index.razor (LayerCategories) dla
+               spójności z gold-barem na kartach. Jeśli backend doda nowy LayerType
+               nieobecny w LayerDisplayOrder — wyląduje na końcu. *@
+            @foreach (var layer in _meditation.Layers.OrderBy(l => LayerOrderKey(l.Type)))
             {
                 <LayerPanel
                     Layer="layer"
@@ -57,6 +61,16 @@ else
     [Parameter] public Guid Id { get; set; }
     private MeditationDetailDto? _meditation;
     private Guid? _assetPickerLayerId;
+
+    // Kolejność wyświetlania warstw w edytorze — zgodna z gold-barem na karcie
+    // medytacji (Pages/Index.razor → LayerCategories). Gdyby backend zwrócił
+    // typ spoza listy, LayerOrderKey zwraca int.MaxValue → ląduje na końcu.
+    private static readonly string[] LayerDisplayOrder = { "Text", "Music", "Nature", "Fx" };
+    private static int LayerOrderKey(string type)
+    {
+        var idx = Array.IndexOf(LayerDisplayOrder, type);
+        return idx >= 0 ? idx : int.MaxValue;
+    }
 
     private bool HasAnyTracks =>
         _meditation is not null && _meditation.Layers.Any(l => l.Tracks.Any());
