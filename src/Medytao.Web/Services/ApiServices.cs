@@ -74,6 +74,9 @@ public class MeditationService(HttpClient http)
     public Task PublishAsync(Guid id) =>
         http.PostAsync($"/api/v1/meditations/{id}/publish", null);
 
+    public Task<HttpResponseMessage> DeleteAsync(Guid id) =>
+        http.DeleteAsync($"/api/v1/meditations/{id}");
+
     public async Task<LayerDto?> UpdateLayerAsync(Guid layerId, float volume, bool muted)
     {
         var response = await http.PutAsJsonAsync($"/api/v1/layers/{layerId}", new { volume, muted });

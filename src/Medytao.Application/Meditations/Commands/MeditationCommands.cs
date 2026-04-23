@@ -79,5 +79,9 @@ public class PublishMeditationHandler(IMeditationRepository repo, IUnitOfWork uo
 internal static class MeditationMappings
 {
     public static MeditationSummaryDto ToSummaryDto(this Meditation m) => new(
-        m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt);
+        m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
+        // Encja Meditation zawsze ma 4 warstwy seed'owane w Create. Tracki w
+        // Update/Publish są załadowane przez repo.GetByIdAsync z Include, a
+        // w Create są pustymi listami — Count zwraca 0.
+        m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count));
 }

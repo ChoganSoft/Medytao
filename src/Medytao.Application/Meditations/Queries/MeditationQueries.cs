@@ -42,6 +42,7 @@ public class GetMeditationsByAuthorHandler(IMeditationRepository repo)
     {
         var meditations = await repo.GetByAuthorAsync(query.AuthorId, ct);
         return meditations.Select(m => new MeditationSummaryDto(
-            m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt));
+            m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
+            m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count)));
     }
 }
