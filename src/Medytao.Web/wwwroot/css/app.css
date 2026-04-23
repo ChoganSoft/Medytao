@@ -12,8 +12,8 @@
     --color-text-secondary: #5a5a5a;
     --color-text-tertiary: #858585;
     /* Akcent — używany przez slidery, pierścienie postępu, linki, itp.
-       Jasny niebieski (Tailwind blue-400) zamiast starego granatu. */
-    --color-text-info: #60a5fa;
+       Złoto marki (taki sam odcień co pasek warstw na karcie medytacji). */
+    --color-text-info: #C5A56C;
     --color-text-success: #3b6d11;
     --color-text-warning: #854f0b;
     --color-text-danger: #a32d2d;
@@ -42,9 +42,9 @@
     --color-text-primary: #e8e8e8;
     --color-text-secondary: #b0b0b0;
     --color-text-tertiary: #858585;
-    /* Akcent w dark — o ton jaśniejszy niż w light, żeby dobrze wybijał się
-       na ciemnym tle (Tailwind blue-300). */
-    --color-text-info: #93c5fd;
+    /* Akcent w dark — złoto rozjaśnione o ton, żeby lepiej wybijało się
+       na ciemnym tle (ten sam hue co w light, wyższa luminancja). */
+    --color-text-info: #D4B884;
     --color-text-success: #c0dd97;
     --color-text-warning: #fac775;
     --color-text-danger: #f7c1c1;
