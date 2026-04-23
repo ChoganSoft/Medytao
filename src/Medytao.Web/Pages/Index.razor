@@ -38,21 +38,10 @@
 
                 <div class="meditation-card @(isPlayingThis ? "playing" : "")">
                     <div class="card-header">
-                        <div class="card-avatar" aria-hidden="true">
-                            @* Medytująca postać w lotosie: głowa, korpus z ramionami
-                               tworzącymi klamrę, dłonie na kolanach, skrzyżowane nogi.
-                               Avatar jest dekoracyjny — aria-hidden. *@
-                            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="32" cy="32" r="30" fill="#0F2538" stroke="#C5A56C" stroke-width="2" />
-                                <g fill="none" stroke="#C5A56C" stroke-width="1.8"
-                                   stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="32" cy="20" r="4.5" />
-                                    <path d="M 28 27 C 22 28, 18 34, 20 44" />
-                                    <path d="M 36 27 C 42 28, 46 34, 44 44" />
-                                    <path d="M 22 43 Q 32 39, 42 43" />
-                                    <path d="M 17 47 Q 32 43, 47 47 Q 47 50, 32 49 Q 17 50, 17 47 Z" />
-                                </g>
-                            </svg>
+                        <div class="card-avatar">
+                            @* Avatar 1:1 z designu — plik PNG leży w wwwroot/img/.
+                               Dekoracyjny, więc alt="". *@
+                            <img src="img/meditation-avatar.png" alt="" />
                         </div>
                         <div class="card-meta-rows">
                             <div class="meta-row">
@@ -339,7 +328,7 @@
     /* ── Header: avatar + meta rows ───────────────────────────────────────── */
     .card-header { display: flex; gap: 16px; align-items: center; margin-bottom: 14px; }
     .card-avatar { width: 64px; height: 64px; flex-shrink: 0; }
-    .card-avatar svg { width: 100%; height: 100%; display: block; }
+    .card-avatar img { width: 100%; height: 100%; display: block; }
 
     .card-meta-rows { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
     .meta-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
