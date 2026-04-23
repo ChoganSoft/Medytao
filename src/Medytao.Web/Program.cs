@@ -17,5 +17,6 @@ builder.Services.AddScoped<MeditationService>();
 builder.Services.AddScoped<AssetService>();
 builder.Services.AddScoped<PreviewHubService>();
 builder.Services.AddScoped<PlaybackSessionService>();
+builder.Services.AddScoped<ThemeService>();
 
 await builder.Build().RunAsync();

@@ -6,6 +6,19 @@
     <title>Medytao</title>
     <base href="/" />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <script>
+        // Preload zapisanego motywu przed załadowaniem CSS — żeby przy reloadzie
+        // ciemny motyw nie "błysnął" jasnym kolorem. Klucz synchronizowany
+        // z ThemeService (medytao.theme) i theme.js (medytaoTheme.apply).
+        // Wartość w localStorage to surowy JSON stringa, tj. z cudzysłowami:
+        // "dark" lub "light". Blazored.LocalStorage tak właśnie to zapisuje.
+        try {
+            var raw = localStorage.getItem('medytao.theme');
+            if (raw === '"dark"' || raw === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        } catch (e) { /* private mode, no localStorage — trudno */ }
+    </script>
     <link href="css/app.css" rel="stylesheet" />
 </head>
 <body>
@@ -19,5 +32,6 @@
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script src="js/audioPreview.js"></script>
+    <script src="js/theme.js"></script>
 </body>
 </html>
