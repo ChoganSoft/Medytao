@@ -122,3 +122,4 @@ TODO.local.md
 /src/Medytao.Api/obj/Release/net9.0/Medytao.Api.GeneratedMSBuildEditorConfig.editorconfig
 /src/Medytao.Api/obj/Debug/net9.0/Medytao.Api.AssemblyInfo.cs
 /src/Medytao.Api/obj/Debug/net9.0/Medytao.Api.AssemblyInfoInputs.cache
+/src/Medytao.Web/obj/Debug/net9.0/Medytao.Web.GeneratedMSBuildEditorConfig.editorconfig
