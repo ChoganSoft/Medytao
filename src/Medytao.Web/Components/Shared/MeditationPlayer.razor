@@ -1,77 +1,83 @@
-@* Pełny player medytacji — miksuje wszystkie 4 warstwy jednocześnie.
+@* Bottom-docked player bar — miksuje wszystkie 4 warstwy jednocześnie.
    W każdej warstwie tracki grają sekwencyjnie (wg Order).
    Track z LoopCount=0 zapętla się w nieskończoność i blokuje kolejne w warstwie.
-   Logika sekwencji siedzi w window.medytaoPlayer (audioPreview.js). *@
+   Logika sekwencji siedzi w window.medytaoPlayer (audioPreview.js).
+
+   Wersja "persistent": pasek zostaje otwarty po zatrzymaniu playbacku — zamyka
+   go dopiero kliknięcie X. Dzięki temu user może w dowolnej chwili wrócić do
+   playu, a canvas z warstwami nadal jest dostępny i można regulować głośności
+   w czasie rzeczywistym (patrz PlaybackSessionService). *@
 
 @implements IAsyncDisposable
 @inject PlaybackSessionService PlaybackSession
 
 @if (Open)
 {
-    <div class="player-backdrop">
-        <div class="player-modal">
-            <div class="player-header">
-                <h2>Preview · @Meditation.Title</h2>
-                <button class="close-btn" @onclick="HandleClose">×</button>
-            </div>
-
-            <!-- Transport -->
-            <div class="transport">
-                <button class="play-btn" @onclick="TogglePlay">
-                    @(_playing ? "◼ Stop" : "▶ Play all")
-                </button>
-                <div class="layer-count">
-                    @ActiveLayerCount of 4 layers ready
+    <div class="player-bar">
+        <div class="player-bar-transport">
+            <button class="player-play-btn @(_playing ? "playing" : "")" @onclick="TogglePlay" title="@(_playing ? "Stop" : "Play all")">
+                @(_playing ? "◼" : "▶")
+            </button>
+            <div class="player-bar-title-wrap">
+                <div class="player-bar-title">@Meditation.Title</div>
+                <div class="player-bar-subtitle">
+                    @if (_playing)
+                    {
+                        <span>Playing · @ActiveLayerCount of 4 layers</span>
+                    }
+                    else
+                    {
+                        <span>Ready · @ActiveLayerCount of 4 layers</span>
+                    }
                 </div>
             </div>
+        </div>
 
-            <!-- Per-layer status -->
-            <div class="player-layers">
-                @foreach (var layer in Meditation.Layers.OrderBy(l => l.Type))
-                {
-                    var trackCount = layer.Tracks.Count();
-                    var progress = GetLayerProgress(layer.Id);
-                    <div class="player-layer @(layer.Muted ? "muted" : "")">
-                        <span class="player-layer-icon">@LayerIcon(layer.Type)</span>
-                        <div class="player-layer-info">
-                            <div class="player-layer-name">@layer.Type</div>
-                            <div class="player-layer-track">
+        <div class="player-bar-layers">
+            @foreach (var layer in Meditation.Layers.OrderBy(l => l.Type))
+            {
+                var trackCount = layer.Tracks.Count();
+                var progress = GetLayerProgress(layer.Id);
+                <div class="player-bar-layer @(layer.Muted ? "muted" : "") @(trackCount == 0 ? "empty" : "")">
+                    <span class="player-bar-layer-icon">@LayerIcon(layer.Type)</span>
+                    <div class="player-bar-layer-info">
+                        <div class="player-bar-layer-head">
+                            <span class="player-bar-layer-name">@layer.Type</span>
+                            <span class="player-bar-layer-status">
                                 @if (trackCount == 0)
                                 {
-                                    <span class="no-track">No tracks</span>
+                                    <text>—</text>
+                                }
+                                else if (layer.Muted)
+                                {
+                                    <text>muted</text>
                                 }
                                 else if (progress is not null && !progress.Finished)
                                 {
-                                    <span>Track @(progress.TrackIndex + 1)/@progress.TrackCount · @FormatTime(progress.CurrentTime) / @FormatTime(progress.Duration)</span>
+                                    <text>@(progress.TrackIndex + 1)/@progress.TrackCount · @FormatTime(progress.CurrentTime)</text>
                                 }
                                 else if (progress is not null && progress.Finished)
                                 {
-                                    <span>Finished</span>
+                                    <text>done</text>
                                 }
                                 else
                                 {
-                                    <span>@trackCount track@(trackCount == 1 ? "" : "s") in sequence</span>
+                                    <text>@trackCount track@(trackCount == 1 ? "" : "s")</text>
                                 }
+                            </span>
+                        </div>
+                        @if (trackCount > 0)
+                        {
+                            <div class="player-bar-layer-progress">
+                                <div class="player-bar-layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
                             </div>
-                            @if (trackCount > 0)
-                            {
-                                <div class="player-layer-progress">
-                                    <div class="player-layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
-                                </div>
-                            }
-                        </div>
-                        <div class="player-layer-meta">
-                            Vol @((int)(layer.Volume * 100))%
-                            @if (layer.Muted) { <text> · muted</text> }
-                        </div>
+                        }
                     </div>
-                }
-            </div>
-
-            <p class="player-hint">
-                Tip: Stop the player before making changes to layers or tracks.
-            </p>
+                </div>
+            }
         </div>
+
+        <button class="player-bar-close" @onclick="HandleClose" title="Close player">×</button>
     </div>
 }
 
@@ -141,6 +147,7 @@
         StartProgressTimer();
     }
 
+    // Wersja "persistent": Stop tylko zatrzymuje playback — pasek zostaje.
     private async Task StopAll()
     {
         StopProgressTimer();
@@ -154,6 +161,7 @@
         _progressByLayer.Clear();
     }
 
+    // X — jedyny sposób na zamknięcie paska. Jeżeli coś gra, zatrzymujemy po drodze.
     private async Task HandleClose()
     {
         if (_playing) await StopAll();
@@ -232,69 +240,153 @@
 }
 
 <style>
-    .player-backdrop {
-        position: fixed; inset: 0;
-        background: rgba(0,0,0,0.55);
-        display: flex; align-items: center; justify-content: center;
-        z-index: 300;
-    }
-    .player-modal {
+    .player-bar {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
         background: var(--color-background-primary);
-        border-radius: 12px; width: 560px; max-width: 95vw;
-        display: flex; flex-direction: column;
-        overflow: hidden;
+        border-top: 1px solid var(--color-border-tertiary);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+        padding: 12px 20px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        z-index: 200;
     }
-    .player-header {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 18px 24px;
-        border-bottom: 1px solid var(--color-border-tertiary);
-    }
-    .player-header h2 { font-size: 16px; font-weight: 500; margin: 0; }
-    .close-btn { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
 
-    .transport {
-        padding: 20px 24px;
-        display: flex; align-items: center; justify-content: space-between;
-        border-bottom: 1px solid var(--color-border-tertiary);
+    .player-bar-transport {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 0 0 auto;
+        min-width: 180px;
+        max-width: 240px;
     }
-    .play-btn {
-        padding: 10px 24px; border-radius: 6px;
-        background: var(--color-text-primary); color: var(--color-background-primary);
-        border: none; font-size: 14px; font-weight: 500; cursor: pointer;
-    }
-    .layer-count { font-size: 13px; color: var(--color-text-secondary); }
 
-    .player-layers { padding: 8px 0; }
-    .player-layer {
-        display: flex; align-items: center; gap: 12px;
-        padding: 12px 24px;
+    .player-play-btn {
+        width: 40px; height: 40px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        border: none;
+        background: var(--color-text-primary);
+        color: var(--color-background-primary);
+        font-size: 14px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.1s;
+    }
+    .player-play-btn:hover { transform: scale(1.05); }
+    .player-play-btn.playing {
+        background: var(--color-text-info);
+    }
+
+    .player-bar-title-wrap {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1;
+    }
+    .player-bar-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--color-text-primary);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .player-bar-subtitle {
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .player-bar-layers {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        min-width: 0;
+    }
+
+    .player-bar-layer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
         transition: opacity 0.2s;
     }
-    .player-layer.muted { opacity: 0.4; }
+    .player-bar-layer.muted { opacity: 0.4; }
+    .player-bar-layer.empty { opacity: 0.35; }
 
-    .player-layer-icon { font-size: 18px; color: var(--color-text-secondary); width: 24px; text-align: center; }
-    .player-layer-info { flex: 1; min-width: 0; }
-    .player-layer-name { font-size: 13px; font-weight: 500; }
-    .player-layer-track { font-size: 11px; color: var(--color-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .player-layer-track .no-track { font-style: italic; }
-    .player-layer-meta { font-size: 11px; color: var(--color-text-tertiary); white-space: nowrap; }
+    .player-bar-layer-icon {
+        font-size: 16px;
+        color: var(--color-text-secondary);
+        width: 20px;
+        text-align: center;
+        flex: 0 0 auto;
+    }
 
-    .player-layer-progress {
-        margin-top: 6px;
+    .player-bar-layer-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .player-bar-layer-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        line-height: 1.2;
+    }
+    .player-bar-layer-name {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--color-text-primary);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .player-bar-layer-status {
+        font-size: 10px;
+        color: var(--color-text-tertiary);
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+
+    .player-bar-layer-progress {
+        margin-top: 4px;
         height: 3px;
         background: var(--color-border-tertiary);
         border-radius: 2px;
         overflow: hidden;
     }
-    .player-layer-progress-fill {
+    .player-bar-layer-progress-fill {
         height: 100%;
         background: var(--color-text-info);
         transition: width 0.2s linear;
     }
 
-    .player-hint {
-        padding: 12px 24px; margin: 0;
-        border-top: 1px solid var(--color-border-tertiary);
-        font-size: 12px; color: var(--color-text-tertiary);
+    .player-bar-close {
+        flex: 0 0 auto;
+        background: none;
+        border: none;
+        font-size: 22px;
+        line-height: 1;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: background 0.1s, color 0.1s;
+    }
+    .player-bar-close:hover {
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+
+    @@media (max-width: 900px) {
+        .player-bar-layers {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .player-bar-transport {
+            min-width: 140px;
+        }
     }
 </style>

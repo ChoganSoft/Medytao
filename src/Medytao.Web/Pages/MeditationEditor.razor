@@ -27,7 +27,7 @@ else
         </div>
 
         <!-- Four layer canvas -->
-        <div class="canvas-area">
+        <div class="canvas-area @(_previewOpen ? "with-player" : "")">
             @foreach (var layer in _meditation.Layers.OrderBy(l => l.Type))
             {
                 <LayerPanel
@@ -133,6 +133,9 @@ else
         padding: 24px;
         display: flex; flex-direction: column; gap: 16px;
     }
+    /* Gdy pasek playera jest otwarty, dołóż miejsca na dole żeby ostatnia
+       warstwa nie była zakryta przez zadokowany pasek. */
+    .canvas-area.with-player { padding-bottom: 110px; }
 
     .loading { display: flex; align-items: center; justify-content: center; height: 100vh; color: var(--color-text-secondary); }
 
