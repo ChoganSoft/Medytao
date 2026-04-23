@@ -35,13 +35,16 @@
 </div>
 
 @code {
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         // Inline script w index.html już nałożył wybrany motyw na <html>.
         // Tu tylko synchronizujemy stan C# z wartością z localStorage,
         // żeby ikona w toggle'u startowała w zgodzie z widokiem.
-        await Theme.InitializeAsync();
+        // Sync, bo musi być gotowe przed pierwszym renderem — inaczej pierwszy
+        // klik toggle'a flipuje z nieaktualnej bazy (_current=Light) i dla
+        // zapisanego "dark" wygląda jakby nic się nie działo.
         Theme.OnChanged += HandleThemeChanged;
+        Theme.Initialize();
     }
 
     private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
