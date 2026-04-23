@@ -13,28 +13,26 @@
         </div>
         <div class="layer-controls">
             <label class="volume-label">Vol</label>
-            <div class="volume-stack">
-                <input type="range" min="0" max="1" step="0.01"
-                       value="@_localVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                       @oninput="e => DragVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
-                       @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
-                       class="medytao-slider volume-slider"
-                       style="--slider-fill: @((int)(_localVolume * 100))%" />
-                @{
-                    var progress = PlaybackSession.GetProgress(Layer.Id);
-                    var showProgress = PlaybackSession.IsPlaying && Layer.Tracks.Any();
-                }
-                @if (showProgress)
-                {
-                    <div class="layer-progress" title="@ProgressTooltip(progress)">
-                        <div class="layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
-                    </div>
-                }
-            </div>
+            <input type="range" min="0" max="1" step="0.01"
+                   value="@_localVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                   @oninput="e => DragVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                   @onchange="e => UpdateVolume(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                   class="medytao-slider volume-slider"
+                   style="--slider-fill: @((int)(_localVolume * 100))%" />
             <span class="volume-value">@((int)(_localVolume * 100))%</span>
             <button class="mute-btn @(Layer.Muted ? "active" : "")" @onclick="ToggleMute" title="Mute layer">
                 @(Layer.Muted ? "🔇" : "🔊")
             </button>
+            @{
+                var progress = PlaybackSession.GetProgress(Layer.Id);
+                var showProgress = PlaybackSession.IsPlaying && Layer.Tracks.Any();
+            }
+            <div class="layer-progress @(showProgress ? "active" : "")" title="@(showProgress ? ProgressTooltip(progress) : "")">
+                @if (showProgress)
+                {
+                    <div class="layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
+                }
+            </div>
         </div>
         <button class="add-track-btn" @onclick="() => OnOpenAssetPicker.InvokeAsync()">+ Add track</button>
     </div>
@@ -177,21 +175,24 @@
 
     .layer-controls { display: flex; align-items: center; gap: 8px; flex: 1; }
     .volume-label { font-size: 12px; color: var(--color-text-secondary); }
-    .volume-stack {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        flex: 1;
-        max-width: 220px;
-    }
-    .volume-slider { width: 100%; max-width: none; }
+    .volume-slider { flex: 0 0 auto; width: 160px; }
     .volume-value { font-size: 12px; color: var(--color-text-secondary); min-width: 32px; }
 
+    /* Pasek postępu rezerwuje miejsce nawet gdy nic nie gra, żeby layout
+       nie skakał przy toggle play/stop. Widoczny wypełnieniem dopiero gdy .active. */
     .layer-progress {
-        height: 3px;
-        background: var(--color-border-tertiary);
+        flex: 1;
+        min-width: 80px;
+        max-width: 280px;
+        height: 4px;
+        background: transparent;
         border-radius: 2px;
         overflow: hidden;
+        margin-left: 4px;
+        transition: background 0.2s;
+    }
+    .layer-progress.active {
+        background: var(--color-border-tertiary);
     }
     .layer-progress-fill {
         height: 100%;
