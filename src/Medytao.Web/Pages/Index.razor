@@ -69,7 +69,7 @@
                         {
                             var count = m.TracksByLayerType.TryGetValue(cat.Key, out var c) ? c : 0;
                             <div class="gold-bar-item" title="@cat.Key">
-                                <span class="gold-bar-icon">@cat.Icon</span>
+                                <i class="@cat.Icon gold-bar-icon" aria-hidden="true"></i>
                                 <span class="gold-bar-count">@count</span>
                             </div>
                         }
@@ -171,13 +171,13 @@
 
     // Kolejność i ikony warstw na złotym pasku. Stringi-klucze pasują do enum
     // LayerType.ToString() serializowanego w MeditationSummaryDto.TracksByLayerType.
-    // Ikony zsynchronizowane z Components/Layers/LayerPanel.razor.
+    // Icon to klasa Font Awesome (CDN dociągany w wwwroot/index.html).
     private static readonly (string Key, string Icon)[] LayerCategories =
     {
-        ("Music", "♪"),
-        ("Nature", "〜"),
-        ("Text", "≡"),
-        ("Fx", "✦"),
+        ("Music", "fa-solid fa-music"),
+        ("Nature", "fa-solid fa-wind"),
+        ("Text", "fa-solid fa-comment"),
+        ("Fx", "fa-solid fa-drum"),
     };
 
     // 2 * π * r, gdzie r = 13. Obwód okręgu ringa w px — używany jako stroke-dasharray
