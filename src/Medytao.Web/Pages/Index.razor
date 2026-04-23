@@ -221,12 +221,15 @@
     .meditation-card:hover { border-color: var(--color-border-secondary); }
     .meditation-card.playing { border-color: var(--color-text-info); }
 
-    /* ── Akcje w prawym górnym rogu: play+ring i edit ─────────────────────── */
+    /* ── Akcje w prawym dolnym rogu: play+ring i edit ─────────────────────── */
     .card-actions {
         position: absolute;
-        top: 12px; right: 12px;
+        bottom: 12px; right: 12px;
         display: flex; align-items: center; gap: 4px;
     }
+    /* Meta ("5m 10s · Dec 1, 2024") leży też na dole karty — damy jej padding
+       z prawej żeby tekst nie wjeżdżał pod play+edit (łącznie ~68px + bufor). */
+    .card-meta { padding-right: 76px; }
 
     /* Wrapper trzyma ring i button jeden na drugim — struktura zerżnięta z
        AudioPreviewButton, patrz Components/Shared/AudioPreviewButton.razor. */
