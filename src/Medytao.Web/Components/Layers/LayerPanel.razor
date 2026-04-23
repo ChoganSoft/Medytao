@@ -26,13 +26,23 @@
             @{
                 var progress = PlaybackSession.GetProgress(Layer.Id);
                 var showProgress = PlaybackSession.IsPlaying && Layer.Tracks.Any();
+                const double ringRadius = 13d;
+                var ringCirc = 2 * Math.PI * ringRadius;
+                var ringOffset = ringCirc * (1 - ProgressFraction(progress));
             }
-            <div class="layer-progress @(showProgress ? "active" : "")" title="@(showProgress ? ProgressTooltip(progress) : "")">
-                @if (showProgress)
-                {
-                    <div class="layer-progress-fill" style="@LayerProgressStyle(progress)"></div>
-                }
-            </div>
+            <span class="layer-ring-wrap" title="@(showProgress ? ProgressTooltip(progress) : "")">
+                <svg class="layer-ring @(showProgress ? "active" : "")"
+                     width="32" height="32" viewBox="0 0 32 32"
+                     aria-hidden="true">
+                    <circle class="ring-bg" cx="16" cy="16" r="@(ringRadius.ToString(System.Globalization.CultureInfo.InvariantCulture))" />
+                    @if (showProgress)
+                    {
+                        <circle class="ring-fill" cx="16" cy="16" r="@(ringRadius.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                                stroke-dasharray="@(ringCirc.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))"
+                                stroke-dashoffset="@(ringOffset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))" />
+                    }
+                </svg>
+            </span>
         </div>
         <button class="add-track-btn" @onclick="() => OnOpenAssetPicker.InvokeAsync()">+ Add track</button>
     </div>
@@ -113,12 +123,11 @@
         await OnLayerChanged.InvokeAsync();
     }
 
-    private static string LayerProgressStyle(PlaybackSessionService.LayerProgress? p)
+    // 0.0 .. 1.0 — ile tracka już minęło. Zwraca 0 gdy nie mamy danych.
+    private static double ProgressFraction(PlaybackSessionService.LayerProgress? p)
     {
-        var pct = (p is not null && p.Duration > 0)
-            ? Math.Clamp(p.CurrentTime / p.Duration * 100.0, 0, 100)
-            : 0;
-        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"width: {pct:0.##}%");
+        if (p is null || p.Duration <= 0) return 0;
+        return Math.Clamp(p.CurrentTime / p.Duration, 0, 1);
     }
 
     private static string ProgressTooltip(PlaybackSessionService.LayerProgress? p)
@@ -178,26 +187,35 @@
     .volume-slider { flex: 0 0 auto; width: 160px; }
     .volume-value { font-size: 12px; color: var(--color-text-secondary); min-width: 32px; }
 
-    /* Pasek postępu rezerwuje miejsce nawet gdy nic nie gra, żeby layout
-       nie skakał przy toggle play/stop. Widoczny wypełnieniem dopiero gdy .active. */
-    .layer-progress {
-        flex: 1;
-        min-width: 80px;
-        max-width: 280px;
-        height: 4px;
-        background: transparent;
-        border-radius: 2px;
-        overflow: hidden;
+    /* Okrągły wskaźnik postępu. Tło-ring rysujemy zawsze (subtelne),
+       ring z wypełnieniem pojawia się tylko gdy sesja leci. Rotate(-90deg)
+       żeby start był u góry, a nie po prawej (domyślny kąt 0 to "3 o'clock"). */
+    .layer-ring-wrap {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px; height: 32px;
         margin-left: 4px;
-        transition: background 0.2s;
     }
-    .layer-progress.active {
-        background: var(--color-border-tertiary);
+    .layer-ring {
+        transform: rotate(-90deg);
     }
-    .layer-progress-fill {
-        height: 100%;
-        background: var(--color-text-info);
-        transition: width 0.2s linear;
+    .layer-ring .ring-bg {
+        fill: none;
+        stroke: var(--color-border-tertiary);
+        stroke-width: 2.5;
+        opacity: 0.5;
+    }
+    .layer-ring.active .ring-bg {
+        opacity: 1;
+    }
+    .layer-ring .ring-fill {
+        fill: none;
+        stroke: var(--color-text-info);
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.2s linear;
     }
 
     .mute-btn {
