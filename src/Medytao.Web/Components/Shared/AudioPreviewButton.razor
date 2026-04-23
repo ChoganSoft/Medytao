@@ -7,7 +7,7 @@
 <span class="audio-preview-wrap" @onclick:stopPropagation="true">
     <button class="audio-preview-btn @(_playing ? "playing" : "")"
             @onclick="Toggle"
-            title="@(_playing ? "Pause" : "Preview")">
+            title="@(_playing ? "Stop" : "Preview")">
         @if (_playing)
         {
             <span>◼</span>
@@ -78,9 +78,13 @@
     {
         if (_playing)
         {
-            await JS.InvokeVoidAsync("medytaoAudio.pause", _audioRef);
+            // stop (nie pause) — zjeżdżamy do zera, żeby ring wrócił do pustego
+            // i następny play zaczął od początku. Taki jest kontrakt tego
+            // przycisku (ikona ◼), mimo że pod spodem <audio> dalej żyje.
+            await JS.InvokeVoidAsync("medytaoAudio.stop", _audioRef);
             StopProgressTimer();
             _playing = false;
+            _currentTime = 0;
         }
         else
         {
