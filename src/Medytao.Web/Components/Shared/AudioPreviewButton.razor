@@ -5,30 +5,14 @@
 @implements IAsyncDisposable
 
 <span class="audio-preview-wrap" @onclick:stopPropagation="true">
-    <button class="audio-preview-btn @(_playing ? "playing" : "")"
-            @onclick="Toggle"
-            title="@(_playing ? "Stop" : "Preview")">
-        @if (_playing)
-        {
-            <span>◼</span>
-        }
-        else
-        {
-            <span>▶</span>
-        }
-    </button>
-
     @{
         const double ringRadius = 13d;
         var ringCirc = 2 * Math.PI * ringRadius;
         var ringOffset = ringCirc * (1 - ProgressFraction);
         var hasProgress = _duration > 0;
     }
-    <span class="audio-preview-ring-wrap"
-          title="@(hasProgress ? FormatTime(_currentTime) + " / " + FormatTime(_duration) : "")">
-        <svg class="audio-preview-ring @(_playing ? "active" : "")"
-             width="32" height="32" viewBox="0 0 32 32"
-             aria-hidden="true">
+    <span class="preview-btn-ring @(_playing ? "playing" : "")">
+        <svg class="preview-ring" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
             <circle class="ring-bg" cx="16" cy="16" r="@(ringRadius.ToString(System.Globalization.CultureInfo.InvariantCulture))" />
             @if (hasProgress)
             {
@@ -37,6 +21,11 @@
                         stroke-dashoffset="@(ringOffset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))" />
             }
         </svg>
+        <button class="preview-btn @(_playing ? "playing" : "")"
+                @onclick="Toggle"
+                title="@ButtonTitle">
+            @(_playing ? "◼" : "▶")
+        </button>
     </span>
 </span>
 
@@ -64,6 +53,24 @@
     // stroke-dashoffset.
     private double ProgressFraction =>
         _duration > 0 ? Math.Clamp(_currentTime / _duration, 0, 1) : 0;
+
+    // Zunifikowany button zje osobny tooltip pierścienia — dokleję czas do
+    // titla buttona, żeby nic nie zginęło (idle: długość tracka, playing: postęp).
+    private string ButtonTitle
+    {
+        get
+        {
+            if (_playing)
+            {
+                return _duration > 0
+                    ? $"Stop · {FormatTime(_currentTime)} / {FormatTime(_duration)}"
+                    : "Stop";
+            }
+            return _duration > 0
+                ? $"Preview · {FormatTime(_duration)}"
+                : "Preview";
+        }
+    }
 
     private static string FormatTime(double seconds)
     {
@@ -183,56 +190,67 @@
     .audio-preview-wrap {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
     }
-    .audio-preview-btn {
-        background: none;
-        border: 1px solid var(--color-border-secondary);
-        border-radius: 50%;
-        width: 28px; height: 28px;
-        flex: 0 0 auto;
-        display: inline-flex; align-items: center; justify-content: center;
-        cursor: pointer;
-        font-size: 11px;
-        color: var(--color-text-secondary);
-        padding: 0;
-        transition: all 0.1s;
-    }
-    .audio-preview-btn:hover {
-        color: var(--color-text-primary);
-        border-color: var(--color-border-primary);
-    }
-    .audio-preview-btn.playing {
-        background: var(--color-text-info);
-        color: var(--color-background-primary);
-        border-color: var(--color-text-info);
-    }
-    /* Okrągły wskaźnik postępu dla preview tracka. Spójny z ringiem
-       warstwy w LayerPanel — ta sama geometria (32x32, r=13). */
-    .audio-preview-ring-wrap {
-        flex: 0 0 auto;
+
+    /* Jeden element zamiast pary button + ring. Kontener 32x32, w którym
+       SVG z ringiem siedzi jako warstwa tła (absolute), a button 22x22
+       w środku jako klikalny element. Pointer-events:none na SVG —
+       wszystkie kliki w obszarze pierścienia łapie button. */
+    .preview-btn-ring {
+        position: relative;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         width: 32px; height: 32px;
+        flex: 0 0 auto;
     }
-    .audio-preview-ring {
-        transform: rotate(-90deg);
+
+    .preview-ring {
+        position: absolute;
+        inset: 0;
+        transform: rotate(-90deg); /* start od góry, nie od "3 o'clock" */
+        pointer-events: none;
     }
-    .audio-preview-ring .ring-bg {
+    .preview-ring .ring-bg {
         fill: none;
         stroke: var(--color-border-tertiary);
         stroke-width: 2.5;
         opacity: 0.5;
+        transition: opacity 0.15s;
     }
-    .audio-preview-ring.active .ring-bg {
+    .preview-btn-ring.playing .preview-ring .ring-bg {
         opacity: 1;
     }
-    .audio-preview-ring .ring-fill {
+    .preview-ring .ring-fill {
         fill: none;
         stroke: var(--color-text-info);
         stroke-width: 2.5;
         stroke-linecap: round;
         transition: stroke-dashoffset 0.18s linear;
+    }
+
+    .preview-btn {
+        position: relative; /* ponad SVG w stack order */
+        width: 22px; height: 22px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-size: 11px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.1s, color 0.1s;
+    }
+    .preview-btn:hover {
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+    .preview-btn-ring.playing .preview-btn {
+        background: var(--color-text-info);
+        color: var(--color-background-primary);
     }
 </style>
