@@ -15,6 +15,11 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
 
     public async Task<IEnumerable<Meditation>> GetByAuthorAsync(Guid authorId, CancellationToken ct = default) =>
         await db.Meditations
+            // Include warstw + tracków — karta medytacji w widoku listy pokazuje
+            // liczbę tracków per LayerType (Music/Nature/Text/Fx) na złotym pasku.
+            // Bez tego Select na Layers rzuci navigation-not-loaded.
+            .Include(m => m.Layers)
+                .ThenInclude(l => l.Tracks)
             .Where(m => m.AuthorId == authorId)
             .OrderByDescending(m => m.UpdatedAt)
             .ToListAsync(ct);

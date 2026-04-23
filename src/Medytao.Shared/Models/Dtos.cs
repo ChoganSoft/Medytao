@@ -35,13 +35,19 @@ public record LayerDto(
 );
 
 // ── Meditation ─────────────────────────────────────────
+// TracksByLayerType: klucz to nazwa LayerType ("Music", "Nature", "Text", "Fx"),
+// wartość — liczba tracków w tej warstwie. Karta medytacji w widoku listy
+// potrzebuje tych liczb na złotym pasku z ikonami, żeby pokazać ile jest
+// dźwięków w każdej kategorii. Dict zamiast czterech osobnych pól, żeby
+// nowy LayerType nie wymuszał zmiany kształtu DTO.
 public record MeditationSummaryDto(
     Guid Id,
     string Title,
     string? Description,
     int DurationMs,
     string Status,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    Dictionary<string, int> TracksByLayerType
 );
 
 public record MeditationDetailDto(
