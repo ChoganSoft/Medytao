@@ -320,8 +320,8 @@
         border-radius: 10px;
         /* Większy padding wokół contentu — proporcje karty zgodne z designem
            (szersza, luźniejsza). Padding-bottom zostawia miejsce na footer-meta
-           i przyciski (absolute bottom). */
-        padding: 24px 28px 60px;
+           i przyciski (absolute bottom) — przyciski 40px wysokie + 14px bottom. */
+        padding: 24px 28px 68px;
         /* overflow: hidden żeby złoty pasek rozciągnięty ujemnym margin-x
            nie wyszedł poza zaokrąglone rogi karty. */
         overflow: hidden;
@@ -389,10 +389,10 @@
     /* ── Footer meta (duration + date) ────────────────────────────────────── */
     .card-footer-meta {
         position: absolute;
-        bottom: 20px; left: 28px;
+        bottom: 22px; left: 28px;
         font-size: 12px; color: var(--color-text-tertiary);
-        /* Rezerwujemy miejsce na 3 przyciski po prawej (~108px + bufor). */
-        max-width: calc(100% - 160px);
+        /* 3 przyciski: 40 + 36 + 36 + 2*6 gap = 124px, + 20px right + bufor. */
+        max-width: calc(100% - 180px);
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
@@ -400,19 +400,21 @@
     .card-actions {
         position: absolute;
         bottom: 14px; right: 20px;
-        display: flex; align-items: center; gap: 4px;
+        display: flex; align-items: center; gap: 6px;
     }
 
     /* Wrapper trzyma ring i button jeden na drugim — struktura zerżnięta z
-       AudioPreviewButton, patrz Components/Shared/AudioPreviewButton.razor. */
+       AudioPreviewButton, patrz Components/Shared/AudioPreviewButton.razor.
+       Rozmiar dobrany tak, żeby ring + wewnętrzny play wizualnie miały wagę
+       ikon na złotym pasku (20px glyph). */
     .play-btn-ring {
         position: relative;
-        width: 32px; height: 32px;
+        width: 40px; height: 40px;
         display: inline-flex; align-items: center; justify-content: center;
     }
     .play-ring {
         position: absolute; inset: 0;
-        width: 32px; height: 32px;
+        width: 40px; height: 40px;
         transform: rotate(-90deg); /* 0% od góry, nie od 3 o'clock */
         pointer-events: none;
     }
@@ -433,12 +435,12 @@
 
     .play-btn {
         position: relative; /* zapewnia stacking nad SVG mimo że SVG jest absolute */
-        width: 22px; height: 22px;
+        width: 28px; height: 28px;
         border: none; background: transparent;
         color: var(--color-text-secondary);
         border-radius: 50%;
         cursor: pointer;
-        font-size: 10px; line-height: 1;
+        font-size: 13px; line-height: 1;
         display: inline-flex; align-items: center; justify-content: center;
         padding: 0;
         transition: background 0.15s, color 0.15s;
@@ -454,12 +456,12 @@
     .play-btn:disabled { cursor: default; opacity: 0.7; }
 
     .edit-btn, .delete-btn {
-        width: 28px; height: 28px;
+        width: 36px; height: 36px;
         border: none; background: transparent;
         color: var(--color-text-secondary);
         border-radius: 50%;
         cursor: pointer;
-        font-size: 14px; line-height: 1;
+        font-size: 18px; line-height: 1;
         display: inline-flex; align-items: center; justify-content: center;
         padding: 0;
         transition: background 0.15s, color 0.15s;
@@ -469,7 +471,7 @@
         color: var(--color-text-primary);
     }
     /* Delete ma większą ikonę (×) i czerwony hover żeby odróżnić destructive action. */
-    .delete-btn { font-size: 18px; }
+    .delete-btn { font-size: 22px; }
     .delete-btn:hover {
         background: var(--color-background-danger, rgba(220, 53, 69, 0.12));
         color: var(--color-text-danger, #dc3545);
@@ -478,8 +480,8 @@
     /* Spinner dla stanu loading (między klikiem a rozpoczęciem odtwarzania,
        kiedy dociągamy MeditationDetailDto z API). */
     .spinner {
-        width: 10px; height: 10px;
-        border: 1.5px solid currentColor;
+        width: 14px; height: 14px;
+        border: 1.8px solid currentColor;
         border-top-color: transparent;
         border-radius: 50%;
         animation: spin 0.7s linear infinite;
