@@ -22,6 +22,7 @@ public static class InfrastructureServiceExtensions
 
         // Repozytoria
         services.AddScoped<IMeditationRepository, MeditationRepository>();
+        services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<ILayerRepository, LayerRepository>();
         services.AddScoped<ITrackRepository, TrackRepository>();
         services.AddScoped<IAssetRepository, AssetRepository>();

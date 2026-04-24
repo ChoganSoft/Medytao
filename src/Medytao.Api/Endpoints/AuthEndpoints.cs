@@ -10,13 +10,22 @@ namespace Medytao.Api.Endpoints;
 
 public static class AuthEndpoints
 {
+    // Nazwa domyślnego programu tworzonego przy rejestracji i przy seed'zie
+    // migracji (dla userów zarejestrowanych przed feature'em programów).
+    // Trzymane jako const, żeby seed i auth używały tego samego stringa.
+    public const string DefaultProgramName = "My meditations";
+
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/auth").WithTags("Auth");
 
-        group.MapPost("/register", async (RegisterRequest req, IUserRepository users, IUnitOfWork uow, IConfiguration cfg) =>
+        group.MapPost("/register", async (
+            RegisterRequest req,
+            IUserRepository users,
+            IProgramRepository programs,
+            IUnitOfWork uow,
+            IConfiguration cfg) =>
         {
-            
             if (await users.GetByEmailAsync(req.Email) is not null)
                 return Results.Conflict("Email already registered.");
 
@@ -28,6 +37,12 @@ public static class AuthEndpoints
             };
 
             await users.AddAsync(user);
+
+            // Auto-default program — user od razu po rejestracji ma gdzie
+            // tworzyć medytacje (bez dodatkowego kroku "stwórz program").
+            var defaultProgram = MeditationProgram.Create(user.Id, DefaultProgramName);
+            await programs.AddAsync(defaultProgram);
+
             await uow.SaveChangesAsync();
             return Results.Ok(GenerateToken(user, cfg));
         });

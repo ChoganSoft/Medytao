@@ -6,8 +6,20 @@ public interface IMeditationRepository
 {
     Task<Meditation?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<IEnumerable<Meditation>> GetByAuthorAsync(Guid authorId, CancellationToken ct = default);
+    Task<IEnumerable<Meditation>> GetByProgramAsync(Guid programId, CancellationToken ct = default);
     Task AddAsync(Meditation meditation, CancellationToken ct = default);
     Task UpdateAsync(Meditation meditation, CancellationToken ct = default);
+    Task DeleteAsync(Guid id, CancellationToken ct = default);
+}
+
+public interface IProgramRepository
+{
+    // Zwraca program wraz z kolekcją medytacji (ale bez layerów/tracków —
+    // te są ładowane lazy przy wejściu do edytora).
+    Task<MeditationProgram?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<IEnumerable<MeditationProgram>> GetByOwnerAsync(Guid ownerId, CancellationToken ct = default);
+    Task AddAsync(MeditationProgram program, CancellationToken ct = default);
+    Task UpdateAsync(MeditationProgram program, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);
 }
 

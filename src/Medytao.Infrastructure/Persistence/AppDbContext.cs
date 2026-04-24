@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Meditation> Meditations => Set<Meditation>();
+    public DbSet<MeditationProgram> Programs => Set<MeditationProgram>();
     public DbSet<Layer> Layers => Set<Layer>();
     public DbSet<Track> Tracks => Set<Track>();
     public DbSet<Asset> Assets => Set<Asset>();

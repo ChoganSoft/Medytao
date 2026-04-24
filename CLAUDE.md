@@ -1,5 +1,17 @@
 # Medytao — wytyczne dla Claude
 
+## Język komunikacji
+
+**Cała rozmowa z userem idzie po polsku.** Dotyczy to wszystkiego, co Claude
+pisze jako odpowiedź w czacie: planów, podsumowań, pytań, raportów po buildach,
+opisu tego co zostało zrobione, propozycji kolejnych kroków. Nawet jeśli tekst
+zawiera terminy techniczne lub cytaty z kodu — framing i narracja zawsze po
+polsku.
+
+Po angielsku piszemy tylko to, co idzie do repo albo do usera końcowego:
+commit messages, PR description, UI labele w aplikacji. Komentarze w kodzie
+(`//`, `/* */`, `<!-- -->`, `<summary>`) — po polsku.
+
 ## Branching strategy
 
 Każda zmiana idzie przez trzy etapy:

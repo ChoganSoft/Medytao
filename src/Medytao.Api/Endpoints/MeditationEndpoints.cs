@@ -26,7 +26,7 @@ public static class MeditationEndpoints
 
         group.MapPost("/", async (CreateMeditationRequest req, ClaimsPrincipal user, IMediator mediator) =>
         {
-            var result = await mediator.Send(new CreateMeditationCommand(user.GetUserId(), req.Title, req.Description));
+            var result = await mediator.Send(new CreateMeditationCommand(user.GetUserId(), req.ProgramId, req.Title, req.Description));
             return Results.Created($"/api/v1/meditations/{result.Id}", result);
         });
 
@@ -50,5 +50,5 @@ public static class MeditationEndpoints
     }
 }
 
-public record CreateMeditationRequest(string Title, string? Description);
+public record CreateMeditationRequest(Guid ProgramId, string Title, string? Description);
 public record UpdateMeditationRequest(string Title, string? Description, int DurationMs);

@@ -40,8 +40,40 @@ public class MeditationConfiguration : IEntityTypeConfiguration<Meditation>
             .HasForeignKey(l => l.MeditationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Many-to-many Meditation <-> MeditationProgram. Strona "Programs"
+        // encji Meditation jest skip-navigation; tabela pośrednicząca ma
+        // domyślną nazwę "MeditationMeditationProgram" — nadpisujemy na
+        // "MeditationPrograms" dla czytelności. Brak cascade po stronie
+        // skip-nav — usunięcie programu kasuje tylko wiersze w tabeli
+        // join (to robi EF automatycznie), samą medytację kasuje
+        // DeleteProgramCommand jeśli została orphanem.
+        b.HasMany(m => m.Programs)
+            .WithMany(p => p.Meditations)
+            .UsingEntity(join => join.ToTable("MeditationPrograms"));
+
         b.HasIndex(m => m.AuthorId);
         b.HasIndex(m => m.Status);
+    }
+}
+
+public class MeditationProgramConfiguration : IEntityTypeConfiguration<MeditationProgram>
+{
+    public void Configure(EntityTypeBuilder<MeditationProgram> b)
+    {
+        b.HasKey(p => p.Id);
+        b.Property(p => p.Name).IsRequired().HasMaxLength(200);
+        b.Property(p => p.Description).HasMaxLength(2000);
+
+        b.HasOne(p => p.Owner)
+            .WithMany(u => u.Programs)
+            .HasForeignKey(p => p.OwnerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Relację M:N do Meditation konfigurujemy tylko po jednej stronie
+        // (w MeditationConfiguration) — EF sam dopasuje drugi koniec.
+
+        b.HasIndex(p => p.OwnerId);
+        b.ToTable("Programs");
     }
 }
 

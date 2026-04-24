@@ -14,6 +14,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBase) 
 builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<MeditationService>();
+builder.Services.AddScoped<ProgramService>();
 builder.Services.AddScoped<AssetService>();
 builder.Services.AddScoped<PreviewHubService>();
 builder.Services.AddScoped<PlaybackSessionService>();
