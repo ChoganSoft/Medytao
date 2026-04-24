@@ -17,22 +17,26 @@
             </div>
         </div>
         <nav class="sidebar-nav">
+            @* Ikony FA dobrane semantycznie: program = warstwy medytacji
+               (layer-group), kategoria = tag, asset library = audio (music),
+               sign out = nowy FA "right-from-bracket" (stary "sign-out-alt"
+               nadal działa jako alias, ale preferujemy v6-native nazwy). *@
             <NavLink href="/" Match="NavLinkMatch.All" class="nav-item" title="My programs">
-                <span class="nav-icon">⊞</span>
+                <i class="nav-icon fa-solid fa-layer-group" aria-hidden="true"></i>
                 <span class="nav-label">My programs</span>
             </NavLink>
             <NavLink href="/categories" class="nav-item" title="Categories">
-                <span class="nav-icon">☰</span>
+                <i class="nav-icon fa-solid fa-tags" aria-hidden="true"></i>
                 <span class="nav-label">Categories</span>
             </NavLink>
             <NavLink href="/assets" class="nav-item" title="Asset library">
-                <span class="nav-icon">⊙</span>
+                <i class="nav-icon fa-solid fa-music" aria-hidden="true"></i>
                 <span class="nav-label">Asset library</span>
             </NavLink>
         </nav>
         <div class="sidebar-footer">
             <button class="nav-item logout-btn" @onclick="Logout" title="Sign out">
-                <span class="nav-icon">↩</span>
+                <i class="nav-icon fa-solid fa-right-from-bracket" aria-hidden="true"></i>
                 <span class="nav-label">Sign out</span>
             </button>
         </div>
@@ -150,7 +154,13 @@
     .sidebar {
         width: 240px; min-width: 240px;
         background: #012e48;
-        border-right: 1px solid rgba(255,255,255,0.06);
+        /* Cień po prawej — lekka głębia, żeby sidebar "unosił się" nad content'em
+           (efekt 3D). Wcześniejszy border-right na półprzezroczystej bieli
+           i tak był niewidoczny na granatowym tle; shadow daje realne
+           oddzielenie warstwy w obu motywach. z-index zapewnia, że cień
+           faktycznie kładzie się na main-content, a nie odwrotnie. */
+        box-shadow: 4px 0 14px rgba(0, 0, 0, 0.18);
+        position: relative; z-index: 1;
         display: flex; flex-direction: column;
         padding: 0;
         color: rgba(255,255,255,0.85);
