@@ -43,13 +43,31 @@ public class MeditationConfiguration : IEntityTypeConfiguration<Meditation>
         // Many-to-many Meditation <-> MeditationProgram. Strona "Programs"
         // encji Meditation jest skip-navigation; tabela pośrednicząca ma
         // domyślną nazwę "MeditationMeditationProgram" — nadpisujemy na
-        // "MeditationPrograms" dla czytelności. Brak cascade po stronie
-        // skip-nav — usunięcie programu kasuje tylko wiersze w tabeli
-        // join (to robi EF automatycznie), samą medytację kasuje
-        // DeleteProgramCommand jeśli została orphanem.
+        // "MeditationPrograms" dla czytelności.
+        //
+        // Kaskady: domyślnie EF ustawia Cascade po obu stronach join-a, ale
+        // wtedy SQL Server wykrywa dwie ścieżki kaskady przy usunięciu User:
+        //   Users → Meditations (CASCADE) → MeditationPrograms (CASCADE)
+        //   Users → Programs     (CASCADE) → MeditationPrograms (CASCADE)
+        // i odrzuca schemat ("may cause cycles or multiple cascade paths").
+        //
+        // Rozwiązanie: strona Program → join ustawiona na ClientCascade —
+        // baza nie dopisuje FK CASCADE (cykl zniknął), a EF i tak kasuje
+        // wiersze join-a kiedy trackuje program z załadowaną kolekcją
+        // Meditations (tak właśnie działa DeleteProgramCommand: GetByIdAsync
+        // robi eager-load Meditations, potem DeleteAsync → SaveChanges).
+        // Strona Meditation → join zostaje na Cascade, więc przy kasowaniu
+        // medytacji (albo jej User-owner-cascade) baza sama czyści join.
         b.HasMany(m => m.Programs)
             .WithMany(p => p.Meditations)
-            .UsingEntity(join => join.ToTable("MeditationPrograms"));
+            .UsingEntity<Dictionary<string, object>>(
+                "MeditationPrograms",
+                j => j.HasOne<MeditationProgram>()
+                      .WithMany()
+                      .OnDelete(DeleteBehavior.ClientCascade),
+                j => j.HasOne<Meditation>()
+                      .WithMany()
+                      .OnDelete(DeleteBehavior.Cascade));
 
         b.HasIndex(m => m.AuthorId);
         b.HasIndex(m => m.Status);
