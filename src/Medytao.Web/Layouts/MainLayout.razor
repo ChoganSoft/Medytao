@@ -3,6 +3,7 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject ThemeService Theme
+@inject Blazored.LocalStorage.ISyncLocalStorageService Storage
 
 <div class="app-shell @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
     <aside class="sidebar">
@@ -11,23 +12,28 @@
                 <img src="img/meditation-avatar.png" alt="" />
             </div>
             <div class="brand-text">
-                <span class="brand-bold">MEDYTAO</span><span class="brand-light"> System</span>
+                <span class="brand-bold">MEDYTAO</span>
+                <span class="brand-light">SYSTEM</span>
             </div>
         </div>
         <nav class="sidebar-nav">
-            <NavLink href="/" Match="NavLinkMatch.All" class="nav-item">
-                <span class="nav-icon">⊞</span> My programs
+            <NavLink href="/" Match="NavLinkMatch.All" class="nav-item" title="My programs">
+                <span class="nav-icon">⊞</span>
+                <span class="nav-label">My programs</span>
             </NavLink>
-            <NavLink href="/categories" class="nav-item">
-                <span class="nav-icon">☰</span> Categories
+            <NavLink href="/categories" class="nav-item" title="Categories">
+                <span class="nav-icon">☰</span>
+                <span class="nav-label">Categories</span>
             </NavLink>
-            <NavLink href="/assets" class="nav-item">
-                <span class="nav-icon">⊙</span> Asset library
+            <NavLink href="/assets" class="nav-item" title="Asset library">
+                <span class="nav-icon">⊙</span>
+                <span class="nav-label">Asset library</span>
             </NavLink>
         </nav>
         <div class="sidebar-footer">
-            <button class="nav-item logout-btn" @onclick="Logout">
-                <span class="nav-icon">↩</span> Sign out
+            <button class="nav-item logout-btn" @onclick="Logout" title="Sign out">
+                <span class="nav-icon">↩</span>
+                <span class="nav-label">Sign out</span>
             </button>
         </div>
     </aside>
@@ -51,8 +57,13 @@
 </div>
 
 @code {
-    // Stan zwinięcia sidebara — trzymany w layoucie, bo tylko hamburger w topbarze
-    // go przełącza. Brak persystencji między reloadami; to czysto wizualny toggle.
+    // Klucz localStorage dla stanu sidebara. Ten sam styl (kropka w nazwie)
+    // co theme-storage, dla spójności. Wartość: bool (true = zwinięty).
+    private const string SidebarStorageKey = "medytao.sidebarCollapsed";
+
+    // Stan zwinięcia sidebara — odczytywany z localStorage w OnInitialized,
+    // zapisywany po każdym toggle. Dzięki synchronicznemu storage nie ma
+    // miganięcia między pierwszym renderem (rozwinięty) a drugim (zwinięty).
     private bool _sidebarCollapsed;
 
     protected override void OnInitialized()
@@ -61,6 +72,19 @@
         // (inline script w index.html ustawił już klasę na <html> przed renderem).
         Theme.OnChanged += HandleThemeChanged;
         Theme.Initialize();
+
+        // Sidebar: wczytanie zapamiętanego stanu. Sync storage → dostępne
+        // przed pierwszym renderem, więc nie ma efektu "najpierw rozwinięty,
+        // potem skok do zwinięcia".
+        try
+        {
+            _sidebarCollapsed = Storage.GetItem<bool>(SidebarStorageKey);
+        }
+        catch
+        {
+            // Private mode / brak localStorage → zostaje domyślny (rozwinięty).
+            _sidebarCollapsed = false;
+        }
 
         // Re-render topbara przy każdej nawigacji — breadcrumb pokazuje aktualną
         // sekcję wywiedzioną z URL-a, więc po przejściu /programs → /categories
@@ -75,7 +99,11 @@
 
     private Task ToggleTheme() => Theme.ToggleAsync();
 
-    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
+    private void ToggleSidebar()
+    {
+        _sidebarCollapsed = !_sidebarCollapsed;
+        try { Storage.SetItem(SidebarStorageKey, _sidebarCollapsed); } catch { }
+    }
 
     // Breadcrumb w topbarze — pojedyncza etykieta nazwy sekcji (nie pełna ścieżka
     // typu "Home › Programs › Details"). Na stronie głównej pokazujemy "Home"
@@ -126,25 +154,31 @@
         display: flex; flex-direction: column;
         padding: 0;
         color: rgba(255,255,255,0.85);
-        transition: width 0.22s ease, min-width 0.22s ease, border-right-width 0.22s ease;
+        transition: width 0.22s ease, min-width 0.22s ease;
         overflow: hidden;
     }
-    /* Zwinięcie sidebara do zera — używamy width zamiast margin-left, żeby
-       główna kolumna płynnie rozszerzała się razem z animacją (flex layout
-       rozdziela brakującą szerokość). */
+    /* Zwinięty sidebar → wąski pasek (64px) z samymi ikonami. Width animuje się
+       płynnie; tekst znika natychmiast (display:none), co zapobiega "zawijaniu
+       się" napisów w trakcie animacji. */
     .app-shell.sidebar-collapsed .sidebar {
-        width: 0; min-width: 0;
-        border-right-width: 0;
+        width: 64px; min-width: 64px;
     }
 
     .sidebar-brand {
         display: flex; align-items: center; gap: 12px;
-        padding: 18px 20px;
+        padding: 14px 20px;
         border-bottom: 1px solid rgba(255,255,255,0.08);
         color: #ffffff;
         min-height: 72px;
         flex-shrink: 0;
     }
+    /* W trybie zwiniętym sam awatar, wycentrowany — padding zmniejszony
+       z 20px do 10px, żeby 44px awatara zmieściło się w 64px sidebarze. */
+    .sidebar-collapsed .sidebar-brand {
+        padding: 14px 10px;
+        justify-content: center;
+    }
+    .sidebar-collapsed .brand-text { display: none; }
 
     .brand-avatar {
         width: 44px; height: 44px;
@@ -156,13 +190,26 @@
     }
     .brand-avatar img { width: 100%; height: 100%; display: block; }
 
+    /* Wordmark: MEDYTAO pogrubione, SYSTEM wyraźnie mniejszy i w spacjowanej
+       kapitalizacji — lekki, wtórny deskryptor pod nazwą, zgodnie z mockupem.
+       Line-height 1 + ręczny gap 2px, bo domyślne 1.2 dla 20px robiłoby
+       za duży odstęp między wierszami. */
     .brand-text {
-        font-size: 20px;
+        display: flex; flex-direction: column;
+        gap: 2px;
+        line-height: 1;
         white-space: nowrap;
-        letter-spacing: 0.01em;
     }
-    .brand-bold { font-weight: 700; }
-    .brand-light { font-weight: 300; opacity: 0.9; }
+    .brand-bold {
+        font-size: 20px; font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+    .brand-light {
+        font-size: 10px; font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.28em;
+        opacity: 0.7;
+    }
 
     .sidebar-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; flex: 1; }
 
@@ -174,6 +221,7 @@
         background: none; border: none; width: 100%; text-align: left;
         transition: background 0.15s, color 0.15s;
         white-space: nowrap;
+        overflow: hidden;
     }
 
     .nav-item:hover, .nav-item.active {
@@ -181,7 +229,22 @@
         color: #ffffff;
     }
 
-    .nav-icon { font-size: 15px; opacity: 0.8; }
+    .nav-icon {
+        font-size: 15px; opacity: 0.8;
+        flex-shrink: 0;
+        width: 20px; text-align: center;
+    }
+    .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Collapsed: nav-item to sam wycentrowany icon. Tekst znika (display:none)
+       żeby nie zawijał się w trakcie animacji zwijania; tooltip (`title`) na
+       nav-linku zapewnia nadal dostęp do etykiety po hoverze. */
+    .sidebar-collapsed .nav-item {
+        justify-content: center;
+        padding: 10px 0;
+        gap: 0;
+    }
+    .sidebar-collapsed .nav-label { display: none; }
 
     .sidebar-footer {
         padding: 8px 8px 16px;
