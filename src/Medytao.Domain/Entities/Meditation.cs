@@ -12,6 +12,15 @@ public class Meditation : BaseEntity
     public int DurationMs { get; set; }
     public MeditationStatus Status { get; set; } = MeditationStatus.Draft;
 
+    // Kategoria medytacji — opcjonalna w schemacie (nullable FK). Powody:
+    //  - legacy medytacje z przed feature'a nie mają przypisania,
+    //  - przy usunięciu kategorii stawiamy FK na NULL (DeleteBehavior.SetNull),
+    //    więc medytacja przeżywa i zostaje "Uncategorized".
+    // UI wymusza wybór przy tworzeniu nowej medytacji (walidacja po stronie
+    // formularza), ale na poziomie domeny dopuszczamy brak.
+    public Guid? CategoryId { get; set; }
+    public MeditationCategory? Category { get; set; }
+
     // One layer per type — always four, created on meditation creation
     public ICollection<Layer> Layers { get; set; } = [];
 
@@ -22,13 +31,14 @@ public class Meditation : BaseEntity
     // w którym były) robi DeleteProgramCommand.
     public ICollection<MeditationProgram> Programs { get; set; } = [];
 
-    public static Meditation Create(Guid authorId, string title, string? description = null)
+    public static Meditation Create(Guid authorId, string title, string? description = null, Guid? categoryId = null)
     {
         var meditation = new Meditation
         {
             AuthorId = authorId,
             Title = title,
-            Description = description
+            Description = description,
+            CategoryId = categoryId
         };
 
         // Seed all four layers immediately

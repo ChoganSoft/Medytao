@@ -69,8 +69,22 @@ public class MeditationConfiguration : IEntityTypeConfiguration<Meditation>
                       .WithMany()
                       .OnDelete(DeleteBehavior.Cascade));
 
+        // Kategoria — nullable FK. SetNull przy usunięciu kategorii: medytacje
+        // zostają, po prostu tracą przypisanie (stają się "Uncategorized").
+        // ClientSetNull zamiast SetNull na bazie, bo User → Meditations cascade
+        // i User → Categories cascade stworzyłyby drugą ścieżkę kaskady
+        // (User → Categories → Meditations SET NULL plus User → Meditations
+        // CASCADE) — analogiczny problem jak z tabelą MeditationPrograms.
+        // ClientSetNull: EF odpina medytację w trackerze przy usuwaniu
+        // kategorii, baza nie dopisuje FK ON DELETE SET NULL.
+        b.HasOne(m => m.Category)
+            .WithMany(c => c.Meditations)
+            .HasForeignKey(m => m.CategoryId)
+            .OnDelete(DeleteBehavior.ClientSetNull);
+
         b.HasIndex(m => m.AuthorId);
         b.HasIndex(m => m.Status);
+        b.HasIndex(m => m.CategoryId);
     }
 }
 
@@ -92,6 +106,27 @@ public class MeditationProgramConfiguration : IEntityTypeConfiguration<Meditatio
 
         b.HasIndex(p => p.OwnerId);
         b.ToTable("Programs");
+    }
+}
+
+public class MeditationCategoryConfiguration : IEntityTypeConfiguration<MeditationCategory>
+{
+    public void Configure(EntityTypeBuilder<MeditationCategory> b)
+    {
+        b.HasKey(c => c.Id);
+        b.Property(c => c.Name).IsRequired().HasMaxLength(100);
+
+        b.HasOne(c => c.Owner)
+            .WithMany(u => u.Categories)
+            .HasForeignKey(c => c.OwnerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Unikalna nazwa w obrębie jednego usera — dwóch userów może mieć
+        // osobno "Medytacja", ale u jednego nie dublujemy. Walidacja po
+        // stronie handlera przed INSERT — indeks to backup.
+        b.HasIndex(c => new { c.OwnerId, c.Name }).IsUnique();
+
+        b.ToTable("Categories");
     }
 }
 

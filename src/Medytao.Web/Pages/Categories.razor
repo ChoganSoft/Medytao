@@ -1,0 +1,291 @@
+@page "/categories"
+@inject CategoryService CategorySvc
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="page-wrap">
+    <div class="page-header">
+        <div>
+            <h1>Categories</h1>
+            <p class="subtitle">Session types used when creating a meditation</p>
+        </div>
+        <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="empty-state">Loading…</div>
+    }
+    else if (!_categories.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">☰</div>
+            <p>No categories yet. Add one to tag your meditations.</p>
+            <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
+        </div>
+    }
+    else
+    {
+        <div class="category-list">
+            @foreach (var c in _categories)
+            {
+                <div class="category-row">
+                    <div class="category-info">
+                        <span class="category-name">@c.Name</span>
+                        <span class="category-meta">
+                            @(c.MeditationCount == 1 ? "1 meditation" : $"{c.MeditationCount} meditations")
+                        </span>
+                    </div>
+                    <button class="delete-btn" @onclick="() => ConfirmDelete(c)" title="Delete">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_creating)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <h2>New category</h2>
+            <div class="field">
+                <label>Name</label>
+                <input @bind="_formName" @bind:event="oninput" placeholder="e.g. Breathwork" />
+            </div>
+            @if (!string.IsNullOrEmpty(_formError))
+            {
+                <p class="form-error">@_formError</p>
+            }
+            <div class="modal-actions">
+                <button class="btn-secondary" @onclick="CancelCreate" disabled="@_saving">Cancel</button>
+                <button class="btn-primary" @onclick="ConfirmCreate"
+                        disabled="@(string.IsNullOrWhiteSpace(_formName) || _saving)">
+                    @(_saving ? "Creating…" : "Create")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_deleting is not null)
+{
+    <div class="modal-backdrop">
+        <div class="modal">
+            <h2>Delete category?</h2>
+            <p class="modal-desc">
+                <strong>@_deleting.Name</strong> will be removed from your dictionary.
+                @if (_deleting.MeditationCount > 0)
+                {
+                    <text> @_deleting.MeditationCount meditations will become uncategorized.</text>
+                }
+            </p>
+            <div class="modal-actions">
+                <button class="btn-secondary" @onclick="() => _deleting = null" disabled="@_saving">Cancel</button>
+                <button class="btn-danger" @onclick="ConfirmDeleteExecute" disabled="@_saving">
+                    @(_saving ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<CategorySummaryDto> _categories = [];
+    private bool _loading = true, _creating, _saving;
+    private string _formName = "";
+    private string? _formError;
+    private CategorySummaryDto? _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!await Auth.IsAuthenticatedAsync())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            _categories = await CategorySvc.GetAllAsync() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login");
+            return;
+        }
+        _loading = false;
+    }
+
+    private void BeginCreate()
+    {
+        _formName = "";
+        _formError = null;
+        _creating = true;
+    }
+
+    private void CancelCreate()
+    {
+        _creating = false;
+        _formError = null;
+    }
+
+    private async Task ConfirmCreate()
+    {
+        if (_saving || string.IsNullOrWhiteSpace(_formName)) return;
+        _saving = true;
+        _formError = null;
+        try
+        {
+            var (success, dto, error) = await CategorySvc.CreateAsync(_formName.Trim());
+            if (success && dto is not null)
+            {
+                // Wkładamy w sortowaną pozycję, żeby lista została uporządkowana
+                // po nazwie bez pełnego reloadu.
+                var idx = _categories.FindIndex(x =>
+                    string.Compare(x.Name, dto.Name, StringComparison.CurrentCultureIgnoreCase) > 0);
+                if (idx < 0) _categories.Add(dto); else _categories.Insert(idx, dto);
+                _creating = false;
+            }
+            else
+            {
+                _formError = error ?? "Could not create category.";
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ConfirmDelete(CategorySummaryDto c) => _deleting = c;
+
+    private async Task ConfirmDeleteExecute()
+    {
+        if (_deleting is null || _saving) return;
+        _saving = true;
+        var id = _deleting.Id;
+        try
+        {
+            var response = await CategorySvc.DeleteAsync(id);
+            if (response.IsSuccessStatusCode)
+            {
+                _categories.RemoveAll(x => x.Id == id);
+                _deleting = null;
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
+
+<style>
+    .page-wrap { padding: 32px 40px; max-width: 900px; margin: 0 auto; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+    .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+
+    /* Lista kategorii to prosty stos wierszy — nie siatka kart, bo kategoria
+       to lekki obiekt (nazwa + licznik), karta byłaby przesadą. Styl zbliżony
+       do listy asset-library'ego. */
+    .category-list {
+        display: flex; flex-direction: column;
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--color-background-primary);
+    }
+    .category-row {
+        display: flex; align-items: center;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--color-border-tertiary);
+        gap: 16px;
+        transition: background 0.15s;
+    }
+    .category-row:last-child { border-bottom: none; }
+    .category-row:hover { background: var(--color-background-secondary); }
+
+    .category-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .category-name {
+        font-size: 15px; font-weight: 500;
+        color: var(--color-text-primary);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .category-meta {
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+    }
+
+    .delete-btn {
+        width: 36px; height: 36px;
+        border: none; background: transparent;
+        color: var(--color-text-secondary);
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 18px; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        flex-shrink: 0;
+        transition: background 0.15s, color 0.15s;
+    }
+    .delete-btn:hover {
+        background: var(--color-background-danger, rgba(220, 53, 69, 0.12));
+        color: var(--color-text-danger, #dc3545);
+    }
+
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
+    .empty-icon { font-size: 36px; margin-bottom: 12px; }
+
+    .modal-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.4);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 100;
+    }
+    .modal {
+        background: var(--color-background-primary);
+        border-radius: 12px; padding: 32px;
+        width: 440px; max-width: 90vw;
+    }
+    .modal h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+    .modal-desc { font-size: 14px; color: var(--color-text-secondary); margin: 0 0 24px; line-height: 1.5; }
+    .modal-desc strong { color: var(--color-text-primary); font-weight: 500; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field label { font-size: 13px; color: var(--color-text-secondary); }
+    .field input {
+        padding: 9px 12px; border-radius: 6px; font-size: 14px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+    .form-error {
+        color: var(--color-text-danger, #dc3545);
+        font-size: 13px;
+        margin: 0 0 12px;
+    }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; }
+    .btn-primary {
+        padding: 9px 18px; border-radius: 6px;
+        background: var(--color-text-primary); color: var(--color-background-primary);
+        border: none; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+    .btn-secondary {
+        padding: 9px 18px; border-radius: 6px;
+        background: transparent; color: var(--color-text-secondary);
+        border: 1px solid var(--color-border-secondary);
+        font-size: 14px; cursor: pointer;
+    }
+    .btn-secondary:disabled { opacity: 0.4; cursor: default; }
+    .btn-danger {
+        padding: 9px 18px; border-radius: 6px;
+        background: var(--color-text-danger, #dc3545); color: #fff;
+        border: none; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-danger:disabled { opacity: 0.6; cursor: default; }
+</style>

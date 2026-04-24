@@ -15,6 +15,25 @@ public static class AuthEndpoints
     // Trzymane jako const, żeby seed i auth używały tego samego stringa.
     public const string DefaultProgramName = "My meditations";
 
+    // Predefiniowane kategorie sesji medytacyjnych — wspólna lista dla
+    // rejestracji i seeda migracyjnego (Program.cs → SeedDefaultCategoriesAsync).
+    // User może potem dodawać/usuwać własne na stronie /categories; ta
+    // tablica to jedynie starter pack. Nazwy zdefiniowane po polsku — to
+    // dane domenowe, nie UI label, więc nie tłumaczymy.
+    public static readonly string[] DefaultCategoryNames =
+    [
+        "Relaksacja",
+        "Medytacja",
+        "Autohipnoza",
+        "Kontemplacja",
+        "Sesja oddechowa",
+        "Dekret afirmacyjny",
+        "Modlitwa",
+        "Synchronizacja półkul mózgowych",
+        "Wizualizacja",
+        "Praca z Kronikami Akaszy",
+    ];
+
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/auth").WithTags("Auth");
@@ -23,6 +42,7 @@ public static class AuthEndpoints
             RegisterRequest req,
             IUserRepository users,
             IProgramRepository programs,
+            ICategoryRepository categories,
             IUnitOfWork uow,
             IConfiguration cfg) =>
         {
@@ -42,6 +62,12 @@ public static class AuthEndpoints
             // tworzyć medytacje (bez dodatkowego kroku "stwórz program").
             var defaultProgram = MeditationProgram.Create(user.Id, DefaultProgramName);
             await programs.AddAsync(defaultProgram);
+
+            // Predefiniowane kategorie — te same 10 co w seedzie migracyjnym.
+            foreach (var name in DefaultCategoryNames)
+            {
+                await categories.AddAsync(MeditationCategory.Create(user.Id, name));
+            }
 
             await uow.SaveChangesAsync();
             return Results.Ok(GenerateToken(user, cfg));

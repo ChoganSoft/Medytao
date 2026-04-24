@@ -67,10 +67,12 @@ public class MeditationService(HttpClient http)
 
     // ProgramId jest teraz wymagane — backend rzuca 404, gdyby program nie
     // istniał. UI tworzy medytacje tylko z poziomu widoku konkretnego programu,
-    // więc id zawsze ma sensowną wartość.
-    public async Task<MeditationSummaryDto?> CreateAsync(Guid programId, string title, string? description = null)
+    // więc id zawsze ma sensowną wartość. CategoryId opcjonalne w kontrakcie
+    // (backend pozwala na null), ale modal "New meditation" wymusza wybór
+    // przed wysłaniem formularza.
+    public async Task<MeditationSummaryDto?> CreateAsync(Guid programId, string title, string? description = null, Guid? categoryId = null)
     {
-        var response = await http.PostAsJsonAsync("/api/v1/meditations", new { programId, title, description });
+        var response = await http.PostAsJsonAsync("/api/v1/meditations", new { programId, title, description, categoryId });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
     }
 
@@ -129,6 +131,30 @@ public class ProgramService(HttpClient http)
 
     public Task<HttpResponseMessage> DeleteAsync(Guid id) =>
         http.DeleteAsync($"/api/v1/programs/{id}");
+}
+
+public class CategoryService(HttpClient http)
+{
+    public Task<List<CategorySummaryDto>?> GetAllAsync() =>
+        http.GetFromJsonAsync<List<CategorySummaryDto>>("/api/v1/categories");
+
+    // Zwraca (success, category-lub-null, errorMsg): modal "New category"
+    // pokazuje dedykowany komunikat przy konflikcie 409 (duplikat nazwy),
+    // więc bool nie wystarcza. Przy sukcesie errorMsg == null.
+    public async Task<(bool Success, CategorySummaryDto? Category, string? Error)> CreateAsync(string name)
+    {
+        var response = await http.PostAsJsonAsync("/api/v1/categories", new { name });
+        if (response.IsSuccessStatusCode)
+        {
+            var dto = await response.Content.ReadFromJsonAsync<CategorySummaryDto>();
+            return (true, dto, null);
+        }
+        var body = await response.Content.ReadAsStringAsync();
+        return (false, null, string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body);
+    }
+
+    public Task<HttpResponseMessage> DeleteAsync(Guid id) =>
+        http.DeleteAsync($"/api/v1/categories/{id}");
 }
 
 public class AssetService(HttpClient http)

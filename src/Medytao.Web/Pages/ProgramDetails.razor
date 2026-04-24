@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject MeditationService MeditationSvc
 @inject ProgramService ProgramSvc
+@inject CategoryService CategorySvc
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject PlaybackSessionService Playback
@@ -54,6 +55,20 @@
                             <div class="meta-row">
                                 <span class="meta-label">STATUS</span>
                                 <span class="meta-value status-@m.Status.ToLower()">@m.Status</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">TYPE</span>
+                                @* Kategoria ("TYPE" w UI, żeby label był krótki i pasował do kolumny).
+                                   Brak kategorii → szary placeholder — lepsze niż pusty wiersz, bo
+                                   zachowuje się stała wysokość karty. *@
+                                @if (!string.IsNullOrEmpty(m.CategoryName))
+                                {
+                                    <span class="meta-value category-chip">@m.CategoryName</span>
+                                }
+                                else
+                                {
+                                    <span class="meta-value category-chip empty">Uncategorized</span>
+                                }
                             </div>
                             @if (!string.IsNullOrEmpty(m.Description))
                             {
@@ -121,12 +136,37 @@
                 <input @bind="_newTitle" placeholder="e.g. Morning calm" />
             </div>
             <div class="field">
+                <label>Category</label>
+                @* Dropdown z kategorii usera. Na tej stronie modal pokazuje się
+                   po kliku "+ New meditation", więc _categories są już załadowane
+                   z OnInitializedAsync. Jeśli lista pusta (bardzo mało prawdopodobne
+                   po seedzie, ale user może wszystkie skasować) — pokazujemy link
+                   do strony zarządzania zamiast selecta. *@
+                @if (_categories.Count == 0)
+                {
+                    <p class="category-empty-hint">
+                        No categories yet. <a href="/categories">Add one</a> to tag this meditation.
+                    </p>
+                }
+                else
+                {
+                    <select @bind="_newCategoryId">
+                        <option value="">— Select —</option>
+                        @foreach (var c in _categories)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </select>
+                }
+            </div>
+            <div class="field">
                 <label>Description (optional)</label>
                 <textarea @bind="_newDesc" placeholder="What is this meditation for?" rows="3"></textarea>
             </div>
             <div class="modal-actions">
                 <button class="btn-secondary" @onclick="() => _creating = false">Cancel</button>
-                <button class="btn-primary" @onclick="ConfirmCreate" disabled="@(string.IsNullOrWhiteSpace(_newTitle))">Create</button>
+                <button class="btn-primary" @onclick="ConfirmCreate"
+                        disabled="@(string.IsNullOrWhiteSpace(_newTitle) || string.IsNullOrEmpty(_newCategoryId))">Create</button>
             </div>
         </div>
     </div>
@@ -155,8 +195,12 @@
 
     private ProgramDetailDto? _program;
     private List<MeditationSummaryDto> _meditations = [];
+    private List<CategorySummaryDto> _categories = [];
     private bool _loading = true, _creating;
     private string _newTitle = "", _newDesc = "";
+    // String zamiast Guid?, bo <select> @bind'uje string; parsujemy w ConfirmCreate.
+    // "" oznacza "nic nie wybrano" → przycisk Create pozostaje disabled.
+    private string _newCategoryId = "";
     private Guid? _loadingId;
     private MeditationSummaryDto? _deletingMeditation;
     private bool _deleting;
@@ -202,8 +246,15 @@
     {
         try
         {
-            _program = await ProgramSvc.GetByIdAsync(Id);
+            // Program + kategorie ładujemy równolegle — oba są niezależne od
+            // siebie, oba potrzebne przed wyświetleniem strony (modal "New
+            // meditation" chce listę kategorii na starcie).
+            var programTask = ProgramSvc.GetByIdAsync(Id);
+            var categoriesTask = CategorySvc.GetAllAsync();
+            await Task.WhenAll(programTask, categoriesTask);
+            _program = await programTask;
             _meditations = _program?.Meditations.ToList() ?? [];
+            _categories = await categoriesTask ?? [];
         }
         catch (HttpRequestException)
         {
@@ -249,14 +300,23 @@
         }
     }
 
-    private void CreateNew() { _newTitle = ""; _newDesc = ""; _creating = true; }
+    private void CreateNew()
+    {
+        _newTitle = "";
+        _newDesc = "";
+        _newCategoryId = "";
+        _creating = true;
+    }
 
     private async Task ConfirmCreate()
     {
         // ProgramId to bieżący `Id` strony — medytacja trafia do tego konkretnego
         // programu. Po utworzeniu nawigujemy do edytora z kontekstem programu
         // (`?program=…`), żeby Back z edytora wracał tutaj, nie do listy programów.
-        var result = await MeditationSvc.CreateAsync(Id, _newTitle.Trim(), _newDesc.Trim());
+        // CategoryId parsujemy z string'a (@bind selecta) — przycisk Create jest
+        // disabled dopóki user nie wybierze, więc tu pole zawsze ma poprawny guid.
+        Guid? categoryId = Guid.TryParse(_newCategoryId, out var parsed) ? parsed : null;
+        var result = await MeditationSvc.CreateAsync(Id, _newTitle.Trim(), _newDesc.Trim(), categoryId);
         if (result is not null) Nav.NavigateTo($"/meditations/{result.Id}?program={Id}");
     }
 
@@ -341,6 +401,26 @@
     .status-draft { color: var(--color-text-warning); font-weight: 500; }
     .status-published { color: var(--color-text-success); font-weight: 500; }
     .status-archived { color: var(--color-text-tertiary); font-weight: 500; }
+
+    /* Chip kategorii — lekki pill w kolorze akcentu (gold), spójny z paletą
+       złotego paska, ale mniejszy i dyskretniejszy (to meta-row, nie CTA). */
+    .category-chip {
+        display: inline-flex; align-items: center;
+        padding: 2px 10px;
+        border-radius: 20px;
+        background: rgba(197, 165, 108, 0.15);
+        color: #8B6F3E;
+        font-size: 12px; font-weight: 500;
+        letter-spacing: 0.01em;
+        max-width: 100%;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .category-chip.empty {
+        background: var(--color-background-secondary);
+        color: var(--color-text-tertiary);
+        font-style: italic;
+        font-weight: 400;
+    }
 
     .card-desc {
         font-size: 13px; color: var(--color-text-secondary);
@@ -481,12 +561,24 @@
     .modal-desc strong { color: var(--color-text-primary); font-weight: 500; }
     .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
     .field label { font-size: 13px; color: var(--color-text-secondary); }
-    .field input, .field textarea {
+    .field input, .field textarea, .field select {
         padding: 9px 12px; border-radius: 6px; font-size: 14px;
         border: 1px solid var(--color-border-secondary);
         background: var(--color-background-secondary);
         color: var(--color-text-primary); resize: vertical;
     }
+    .field select { appearance: auto; padding-right: 28px; }
+
+    .category-empty-hint {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+        margin: 0;
+        padding: 9px 12px;
+        border-radius: 6px;
+        background: var(--color-background-secondary);
+    }
+    .category-empty-hint a { color: var(--color-text-info); text-decoration: none; }
+    .category-empty-hint a:hover { text-decoration: underline; }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; }
     .btn-primary {
         padding: 9px 18px; border-radius: 6px;

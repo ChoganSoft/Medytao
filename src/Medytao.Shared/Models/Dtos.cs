@@ -40,6 +40,10 @@ public record LayerDto(
 // potrzebuje tych liczb na złotym pasku z ikonami, żeby pokazać ile jest
 // dźwięków w każdej kategorii. Dict zamiast czterech osobnych pól, żeby
 // nowy LayerType nie wymuszał zmiany kształtu DTO.
+//
+// CategoryId + CategoryName: opcjonalne (legacy medytacje mogą nie mieć
+// kategorii, a usunięcie kategorii zeruje FK). UI renderuje badge tylko
+// gdy CategoryName != null.
 public record MeditationSummaryDto(
     Guid Id,
     string Title,
@@ -47,7 +51,9 @@ public record MeditationSummaryDto(
     int DurationMs,
     string Status,
     DateTimeOffset CreatedAt,
-    Dictionary<string, int> TracksByLayerType
+    Dictionary<string, int> TracksByLayerType,
+    Guid? CategoryId,
+    string? CategoryName
 );
 
 public record MeditationDetailDto(
@@ -57,7 +63,9 @@ public record MeditationDetailDto(
     int DurationMs,
     string Status,
     DateTimeOffset CreatedAt,
-    IEnumerable<LayerDto> Layers
+    IEnumerable<LayerDto> Layers,
+    Guid? CategoryId,
+    string? CategoryName
 );
 
 // ── Program ────────────────────────────────────────────
@@ -79,6 +87,17 @@ public record ProgramDetailDto(
     string? Description,
     DateTimeOffset CreatedAt,
     IEnumerable<MeditationSummaryDto> Meditations
+);
+
+// ── Category ───────────────────────────────────────────
+// Prosty słownikowy typ dla dropdownu przy tworzeniu medytacji i dla strony
+// zarządzania kategoriami. MeditationCount wystawiamy, żeby lista na stronie
+// /categories pokazywała od razu ile medytacji ma daną kategorię (i żeby
+// modal delete mógł ostrzec, że usunięcie zostawi N medytacji bez kategorii).
+public record CategorySummaryDto(
+    Guid Id,
+    string Name,
+    int MeditationCount
 );
 
 // ── Auth ───────────────────────────────────────────────
