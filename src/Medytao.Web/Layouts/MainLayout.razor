@@ -237,6 +237,12 @@
     .nav-item:hover, .nav-item.active {
         background: rgba(255,255,255,0.08);
         color: #ffffff;
+        /* Browser UA stylesheet wraca do domyślnego underline dla linku
+           w stanie hover nawet jeśli base reguła ma text-decoration:none.
+           Musimy nadpisać explicite na hover/active, inaczej NavLink
+           (renderowany jako anchor) pokazuje kreskę pod etykietą przy
+           najeździe kursorem. */
+        text-decoration: none;
     }
 
     .nav-icon {
