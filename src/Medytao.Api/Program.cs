@@ -99,6 +99,10 @@ if (app.Environment.IsDevelopment())
     // formalne migracje EF, to się przeniesie do osobnego data-seed scriptu.
     await SeedDefaultProgramsAsync(db);
 
+    // Analogicznie dla kategorii — userzy bez żadnej kategorii dostają
+    // predefiniowaną dziesiątkę. Idempotentne (sprawdza Categories.Any()).
+    await SeedDefaultCategoriesAsync(db);
+
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
@@ -121,6 +125,28 @@ static async Task SeedDefaultProgramsAsync(AppDbContext db)
             program.Meditations.Add(m);
         }
         db.Programs.Add(program);
+    }
+
+    await db.SaveChangesAsync();
+}
+
+static async Task SeedDefaultCategoriesAsync(AppDbContext db)
+{
+    // Bierzemy userów, którzy nie mają ŻADNEJ kategorii — nie chcemy dosypywać
+    // predefiniowanych, jeśli user już coś u siebie poustawiał (np. skasował
+    // pięć nieużywanych i zostawił pięć). To by dublowało wpisy i ignorowało
+    // jego wybory. Idempotentność wystarcza na "u=ncleansed" userów.
+    var usersWithoutCategory = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+        .ToListAsync(db.Users.Where(u => !u.Categories.Any()));
+
+    if (usersWithoutCategory.Count == 0) return;
+
+    foreach (var user in usersWithoutCategory)
+    {
+        foreach (var name in AuthEndpoints.DefaultCategoryNames)
+        {
+            db.Categories.Add(MeditationCategory.Create(user.Id, name));
+        }
     }
 
     await db.SaveChangesAsync();
@@ -161,6 +187,7 @@ var api = app.MapGroup("/api/v1").RequireAuthorization();
 
 app.MapAuthEndpoints();
 api.MapProgramEndpoints();
+api.MapCategoryEndpoints();
 api.MapMeditationEndpoints();
 api.MapLayerEndpoints();
 api.MapAssetEndpoints();

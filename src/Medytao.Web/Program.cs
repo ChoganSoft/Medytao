@@ -15,6 +15,7 @@ builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<MeditationService>();
 builder.Services.AddScoped<ProgramService>();
+builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<AssetService>();
 builder.Services.AddScoped<PreviewHubService>();
 builder.Services.AddScoped<PlaybackSessionService>();

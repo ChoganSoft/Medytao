@@ -9,4 +9,5 @@ public class User : BaseEntity
     public ICollection<Meditation> Meditations { get; set; } = [];
     public ICollection<Asset> Assets { get; set; } = [];
     public ICollection<MeditationProgram> Programs { get; set; } = [];
+    public ICollection<MeditationCategory> Categories { get; set; } = [];
 }

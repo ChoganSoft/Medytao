@@ -8,6 +8,7 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
 {
     public Task<Meditation?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         db.Meditations
+            .Include(m => m.Category)
             .Include(m => m.Layers)
                 .ThenInclude(l => l.Tracks)
                     .ThenInclude(t => t.Asset)
@@ -18,6 +19,8 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
             // Include warstw + tracków — karta medytacji w widoku listy pokazuje
             // liczbę tracków per LayerType (Music/Nature/Text/Fx) na złotym pasku.
             // Bez tego Select na Layers rzuci navigation-not-loaded.
+            // Category dołączamy, bo karta pokazuje też badge kategorii.
+            .Include(m => m.Category)
             .Include(m => m.Layers)
                 .ThenInclude(l => l.Tracks)
             .Where(m => m.AuthorId == authorId)
@@ -26,6 +29,7 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
 
     public async Task<IEnumerable<Meditation>> GetByProgramAsync(Guid programId, CancellationToken ct = default) =>
         await db.Meditations
+            .Include(m => m.Category)
             .Include(m => m.Layers)
                 .ThenInclude(l => l.Tracks)
             .Where(m => m.Programs.Any(p => p.Id == programId))
@@ -142,12 +146,51 @@ public class UserRepository(AppDbContext db) : IUserRepository
     }
 }
 
+public class CategoryRepository(AppDbContext db) : ICategoryRepository
+{
+    public Task<MeditationCategory?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        db.Categories.FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public async Task<IEnumerable<MeditationCategory>> GetByOwnerAsync(Guid ownerId, CancellationToken ct = default) =>
+        await db.Categories
+            // Eager-load Meditations — strona /categories pokazuje licznik
+            // medytacji per kategorię, a dropdown w modal-u "New meditation"
+            // i tak chce samego Id+Name, więc to tylko koszt listy kategorii
+            // (pojedynczy user: kilkanaście wierszy, OK).
+            .Include(c => c.Meditations)
+            .Where(c => c.OwnerId == ownerId)
+            .OrderBy(c => c.Name)
+            .ToListAsync(ct);
+
+    public Task<bool> NameExistsAsync(Guid ownerId, string name, CancellationToken ct = default) =>
+        db.Categories.AnyAsync(c => c.OwnerId == ownerId && c.Name == name, ct);
+
+    public async Task AddAsync(MeditationCategory category, CancellationToken ct = default) =>
+        await db.Categories.AddAsync(category, ct);
+
+    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        // Eager-load Meditations, żeby DeleteBehavior.ClientSetNull faktycznie
+        // zadziałał — EF musi trackować wiersze, którym zerujemy FK. Bez
+        // Include medytacje nie byłyby w change-trackerze i zostałby wiszący
+        // FK w bazie (poza tym klasa DeleteBehavior.ClientSetNull rzuciłaby
+        // wyjątek podczas SaveChanges).
+        var category = await db.Categories
+            .Include(c => c.Meditations)
+            .FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (category is not null) db.Categories.Remove(category);
+    }
+}
+
 public class ProgramRepository(AppDbContext db) : IProgramRepository
 {
     public Task<MeditationProgram?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         db.Programs
             // Medytacje doładowujemy, żeby ProgramDetails od razu miało listę
             // do wyrenderowania. Tracki/layery ładujemy dopiero w edytorze.
+            // Category — karta medytacji pokazuje badge kategorii.
+            .Include(p => p.Meditations)
+                .ThenInclude(m => m.Category)
             .Include(p => p.Meditations)
                 .ThenInclude(m => m.Layers)
                     .ThenInclude(l => l.Tracks)

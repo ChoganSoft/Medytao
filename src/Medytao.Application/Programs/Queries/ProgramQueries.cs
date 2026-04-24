@@ -38,7 +38,9 @@ public class GetProgramByIdHandler(IProgramRepository repo)
             .OrderByDescending(m => m.UpdatedAt)
             .Select(m => new MeditationSummaryDto(
                 m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
-                m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count)));
+                m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
+                m.CategoryId,
+                m.Category?.Name));
 
         return new ProgramDetailDto(p.Id, p.Name, p.Description, p.CreatedAt, meds);
     }

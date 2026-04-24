@@ -12,6 +12,19 @@ public interface IMeditationRepository
     Task DeleteAsync(Guid id, CancellationToken ct = default);
 }
 
+public interface ICategoryRepository
+{
+    Task<MeditationCategory?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    // Lista per-user — zwraca kategorie zalogowanego usera, posortowane po
+    // nazwie (pokazujemy je w dropdownie i na stronie zarządzania).
+    Task<IEnumerable<MeditationCategory>> GetByOwnerAsync(Guid ownerId, CancellationToken ct = default);
+    // Sprawdza konflikt nazwy w obrębie tego samego usera — używane zanim
+    // dodamy nową kategorię, żeby nie tworzyć duplikatów.
+    Task<bool> NameExistsAsync(Guid ownerId, string name, CancellationToken ct = default);
+    Task AddAsync(MeditationCategory category, CancellationToken ct = default);
+    Task DeleteAsync(Guid id, CancellationToken ct = default);
+}
+
 public interface IProgramRepository
 {
     // Zwraca program wraz z kolekcją medytacji (ale bez layerów/tracków —
