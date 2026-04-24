@@ -1,4 +1,5 @@
 using MediatR;
+using Medytao.Application.Programs.Commands;
 using Medytao.Domain.Interfaces;
 using Medytao.Shared.Models;
 
@@ -12,9 +13,11 @@ public class GetProgramsByOwnerHandler(IProgramRepository repo)
 {
     public async Task<IEnumerable<ProgramSummaryDto>> Handle(GetProgramsByOwnerQuery q, CancellationToken ct)
     {
+        // Mapowanie leci przez ToSummaryDto() z Commands/ProgramCommands.cs —
+        // jeden punkt prawdy dla posortowanej listy tytułów medytacji, zamiast
+        // duplikować logikę w każdym handlerze.
         var programs = await repo.GetByOwnerAsync(q.OwnerId, ct);
-        return programs.Select(p => new ProgramSummaryDto(
-            p.Id, p.Name, p.Description, p.Meditations.Count, p.CreatedAt));
+        return programs.Select(p => p.ToSummaryDto());
     }
 }
 

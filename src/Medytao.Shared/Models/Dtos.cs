@@ -62,13 +62,14 @@ public record MeditationDetailDto(
 
 // ── Program ────────────────────────────────────────────
 // Program grupuje medytacje (M:N). Karta programu w widoku listy pokazuje
-// tytuł/opis + licznik medytacji na złotym pasku (bez awatara — decyzja
-// designu, program to "folder", nie sesja).
+// tytuł/opis + listę nazw medytacji na złotym pasku (bez awatara — decyzja
+// designu, program to "folder", nie sesja). Licznik jest pochodny od listy
+// (MeditationTitles.Count) — nie duplikujemy go w DTO.
 public record ProgramSummaryDto(
     Guid Id,
     string Name,
     string? Description,
-    int MeditationCount,
+    IReadOnlyList<string> MeditationTitles,
     DateTimeOffset CreatedAt
 );
 
