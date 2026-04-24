@@ -6,14 +6,30 @@ using Medytao.Shared.Models;
 namespace Medytao.Application.Meditations.Commands;
 
 // ── Create ────────────────────────────────────────────────────────────────────
-public record CreateMeditationCommand(Guid AuthorId, string Title, string? Description) : IRequest<MeditationSummaryDto>;
+// ProgramId jest wymagane — medytacja MUSI należeć do programu (decyzja
+// domenowa: program to "folder", orphaned medytacje nie mają prawa bytu).
+// Handler weryfikuje, że program istnieje i należy do tego samego usera,
+// potem przypina medytację do programu po dodaniu.
+public record CreateMeditationCommand(Guid AuthorId, Guid ProgramId, string Title, string? Description)
+    : IRequest<MeditationSummaryDto>;
 
-public class CreateMeditationHandler(IMeditationRepository repo, IUnitOfWork uow)
+public class CreateMeditationHandler(
+    IMeditationRepository repo,
+    IProgramRepository programRepo,
+    IUnitOfWork uow)
     : IRequestHandler<CreateMeditationCommand, MeditationSummaryDto>
 {
     public async Task<MeditationSummaryDto> Handle(CreateMeditationCommand cmd, CancellationToken ct)
     {
+        var program = await programRepo.GetByIdAsync(cmd.ProgramId, ct)
+            ?? throw new KeyNotFoundException($"Program {cmd.ProgramId} not found.");
+
+        if (program.OwnerId != cmd.AuthorId)
+            throw new UnauthorizedAccessException("Program does not belong to the current user.");
+
         var meditation = Meditation.Create(cmd.AuthorId, cmd.Title, cmd.Description);
+        program.Meditations.Add(meditation);
+
         await repo.AddAsync(meditation, ct);
         await uow.SaveChangesAsync(ct);
         return meditation.ToSummaryDto();

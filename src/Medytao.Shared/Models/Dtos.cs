@@ -60,5 +60,25 @@ public record MeditationDetailDto(
     IEnumerable<LayerDto> Layers
 );
 
+// ── Program ────────────────────────────────────────────
+// Program grupuje medytacje (M:N). Karta programu w widoku listy pokazuje
+// tytuł/opis + licznik medytacji na złotym pasku (bez awatara — decyzja
+// designu, program to "folder", nie sesja).
+public record ProgramSummaryDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    int MeditationCount,
+    DateTimeOffset CreatedAt
+);
+
+public record ProgramDetailDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    DateTimeOffset CreatedAt,
+    IEnumerable<MeditationSummaryDto> Meditations
+);
+
 // ── Auth ───────────────────────────────────────────────
 public record AuthTokenDto(string AccessToken, DateTimeOffset ExpiresAt, string DisplayName);

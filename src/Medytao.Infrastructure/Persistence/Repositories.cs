@@ -24,6 +24,14 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
             .OrderByDescending(m => m.UpdatedAt)
             .ToListAsync(ct);
 
+    public async Task<IEnumerable<Meditation>> GetByProgramAsync(Guid programId, CancellationToken ct = default) =>
+        await db.Meditations
+            .Include(m => m.Layers)
+                .ThenInclude(l => l.Tracks)
+            .Where(m => m.Programs.Any(p => p.Id == programId))
+            .OrderByDescending(m => m.UpdatedAt)
+            .ToListAsync(ct);
+
     public async Task AddAsync(Meditation meditation, CancellationToken ct = default) =>
         await db.Meditations.AddAsync(meditation, ct);
 
@@ -131,6 +139,42 @@ public class UserRepository(AppDbContext db) : IUserRepository
     {
         db.Users.Update(user);
         return Task.CompletedTask;
+    }
+}
+
+public class ProgramRepository(AppDbContext db) : IProgramRepository
+{
+    public Task<MeditationProgram?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        db.Programs
+            // Medytacje doładowujemy, żeby ProgramDetails od razu miało listę
+            // do wyrenderowania. Tracki/layery ładujemy dopiero w edytorze.
+            .Include(p => p.Meditations)
+                .ThenInclude(m => m.Layers)
+                    .ThenInclude(l => l.Tracks)
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+
+    public async Task<IEnumerable<MeditationProgram>> GetByOwnerAsync(Guid ownerId, CancellationToken ct = default) =>
+        await db.Programs
+            // Tylko same Meditations (bez warstw) — listę programów renderujemy
+            // z liczbą medytacji per program, więc .Count() na navigation wystarczy.
+            .Include(p => p.Meditations)
+            .Where(p => p.OwnerId == ownerId)
+            .OrderBy(p => p.CreatedAt)
+            .ToListAsync(ct);
+
+    public async Task AddAsync(MeditationProgram program, CancellationToken ct = default) =>
+        await db.Programs.AddAsync(program, ct);
+
+    public Task UpdateAsync(MeditationProgram program, CancellationToken ct = default)
+    {
+        db.Programs.Update(program);
+        return Task.CompletedTask;
+    }
+
+    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        var program = await db.Programs.FindAsync([id], ct);
+        if (program is not null) db.Programs.Remove(program);
     }
 }
 

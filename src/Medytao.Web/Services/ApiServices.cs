@@ -65,9 +65,12 @@ public class MeditationService(HttpClient http)
     public Task<MeditationDetailDto?> GetByIdAsync(Guid id) =>
         http.GetFromJsonAsync<MeditationDetailDto>($"/api/v1/meditations/{id}");
 
-    public async Task<MeditationSummaryDto?> CreateAsync(string title, string? description = null)
+    // ProgramId jest teraz wymagane — backend rzuca 404, gdyby program nie
+    // istniał. UI tworzy medytacje tylko z poziomu widoku konkretnego programu,
+    // więc id zawsze ma sensowną wartość.
+    public async Task<MeditationSummaryDto?> CreateAsync(Guid programId, string title, string? description = null)
     {
-        var response = await http.PostAsJsonAsync("/api/v1/meditations", new { title, description });
+        var response = await http.PostAsJsonAsync("/api/v1/meditations", new { programId, title, description });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
     }
 
@@ -102,6 +105,30 @@ public class MeditationService(HttpClient http)
 
     public Task ReorderTracksAsync(Guid layerId, IEnumerable<Guid> orderedIds) =>
         http.PutAsJsonAsync($"/api/v1/layers/{layerId}/tracks/reorder", new { orderedTrackIds = orderedIds });
+}
+
+public class ProgramService(HttpClient http)
+{
+    public Task<List<ProgramSummaryDto>?> GetAllAsync() =>
+        http.GetFromJsonAsync<List<ProgramSummaryDto>>("/api/v1/programs");
+
+    public Task<ProgramDetailDto?> GetByIdAsync(Guid id) =>
+        http.GetFromJsonAsync<ProgramDetailDto>($"/api/v1/programs/{id}");
+
+    public async Task<ProgramSummaryDto?> CreateAsync(string name, string? description = null)
+    {
+        var response = await http.PostAsJsonAsync("/api/v1/programs", new { name, description });
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ProgramSummaryDto>() : null;
+    }
+
+    public async Task<ProgramSummaryDto?> UpdateAsync(Guid id, string name, string? description)
+    {
+        var response = await http.PutAsJsonAsync($"/api/v1/programs/{id}", new { name, description });
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ProgramSummaryDto>() : null;
+    }
+
+    public Task<HttpResponseMessage> DeleteAsync(Guid id) =>
+        http.DeleteAsync($"/api/v1/programs/{id}");
 }
 
 public class AssetService(HttpClient http)

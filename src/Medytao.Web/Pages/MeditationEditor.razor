@@ -62,6 +62,11 @@ else
     private MeditationDetailDto? _meditation;
     private Guid? _assetPickerLayerId;
 
+    // Kontekst programu z którego user wszedł do edytora (query string
+    // "?program=…"). Używany tylko do decyzji gdzie wrócić po kliku Back —
+    // pusto oznacza "wróć do listy programów".
+    private Guid? _programContextId;
+
     // Kolejność wyświetlania warstw w edytorze — zgodna z gold-barem na karcie
     // medytacji (Pages/Index.razor → LayerCategories). Gdyby backend zwrócił
     // typ spoza listy, LayerOrderKey zwraca int.MaxValue → ląduje na końcu.
@@ -83,13 +88,34 @@ else
             Nav.NavigateTo("/login");
             return;
         }
+
+        // Jeżeli wszedłeś z widoku programu, URL ma ?program=<guid> — zapisujemy,
+        // żeby Back wrócił do tego samego programu. Brak query = fallback na listę.
+        // WASM nie ma QueryHelpers w default assembly reference, więc parsujemy
+        // ręcznie (jeden parametr, prosty split na '=').
+        var query = Nav.ToAbsoluteUri(Nav.Uri).Query;
+        if (!string.IsNullOrEmpty(query))
+        {
+            // query zaczyna się od '?'
+            foreach (var kv in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = kv.Split('=', 2);
+                if (parts.Length == 2 && parts[0] == "program" && Guid.TryParse(parts[1], out var parsed))
+                {
+                    _programContextId = parsed;
+                    break;
+                }
+            }
+        }
+
         _meditation = await MeditationSvc.GetByIdAsync(Id);
         PlaybackSession.OnChanged += HandleSessionChanged;
     }
 
     private void HandleSessionChanged() => InvokeAsync(StateHasChanged);
 
-    private void GoBack() => Nav.NavigateTo("/");
+    private void GoBack() =>
+        Nav.NavigateTo(_programContextId is { } pid ? $"/programs/{pid}" : "/");
 
     private async Task Publish()
     {
