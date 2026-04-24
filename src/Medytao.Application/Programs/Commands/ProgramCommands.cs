@@ -123,6 +123,20 @@ public class AddMeditationToProgramHandler(
 // ── Mapping helpers ───────────────────────────────────────────────────────────
 internal static class ProgramMappings
 {
-    public static ProgramSummaryDto ToSummaryDto(this MeditationProgram p) => new(
-        p.Id, p.Name, p.Description, p.Meditations?.Count ?? 0, p.CreatedAt);
+    // Tytuły medytacji pokazujemy na złotym pasku karty programu. Sortujemy
+    // alfabetycznie, żeby kolejność była deterministyczna (zwłaszcza gdy user
+    // przestawia medytacje między programami — inaczej kolejność zmieniałaby
+    // się zależnie od timestampów w bazie). Jeśli kolekcja Meditations nie
+    // została eager-loaded (fresh Create), traktujemy jak pustą listę.
+    public static ProgramSummaryDto ToSummaryDto(this MeditationProgram p)
+    {
+        var titles = p.Meditations is { Count: > 0 }
+            ? p.Meditations
+                .Select(m => m.Title)
+                .OrderBy(t => t, StringComparer.CurrentCultureIgnoreCase)
+                .ToList()
+            : new List<string>();
+
+        return new ProgramSummaryDto(p.Id, p.Name, p.Description, titles, p.CreatedAt);
+    }
 }

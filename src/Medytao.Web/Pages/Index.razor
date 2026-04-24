@@ -45,13 +45,24 @@
                         </div>
                     </div>
 
-                    @* Złoty pasek — pokazuje tylko licznik medytacji w programie.
-                       Dla symetrii z kartą medytacji używamy ikony "list" z FA. *@
+                    @* Złoty pasek — lista nazw medytacji w programie (zamiast
+                       samego licznika, żeby user widział skład programu bez
+                       wchodzenia w szczegóły). Tytuły oddzielone separatorem
+                       "•", cała linia obcinana ellipsis jeśli nie mieści się
+                       w karcie; pełna lista widoczna w tooltipie. Pusta lista
+                       → placeholder "No meditations yet". Ikonę "list" z FA
+                       zostawiamy dla symetrii z kartą medytacji. *@
                     <div class="gold-bar">
-                        <div class="gold-bar-item" title="Meditations">
+                        <div class="gold-bar-item" title="@(p.MeditationTitles.Count == 0 ? "No meditations" : string.Join(", ", p.MeditationTitles))">
                             <i class="fa-solid fa-list gold-bar-icon" aria-hidden="true"></i>
-                            <span class="gold-bar-count">@p.MeditationCount</span>
-                            <span class="gold-bar-label">@(p.MeditationCount == 1 ? "meditation" : "meditations")</span>
+                            @if (p.MeditationTitles.Count == 0)
+                            {
+                                <span class="gold-bar-empty">No meditations yet</span>
+                            }
+                            else
+                            {
+                                <span class="gold-bar-titles">@string.Join("  •  ", p.MeditationTitles)</span>
+                            }
                         </div>
                     </div>
 
@@ -127,9 +138,9 @@
             <h2>Delete program?</h2>
             <p class="modal-desc">
                 <strong>@_deleting.Name</strong> will be permanently removed.
-                @if (_deleting.MeditationCount > 0)
+                @if (_deleting.MeditationTitles.Count > 0)
                 {
-                    <text> Meditations that exist only in this program will also be deleted (@_deleting.MeditationCount in total). This cannot be undone.</text>
+                    <text> Meditations that exist only in this program will also be deleted (@_deleting.MeditationTitles.Count in total). This cannot be undone.</text>
                 }
                 else
                 {
@@ -304,28 +315,36 @@
         overflow: hidden;
     }
 
-    /* Złoty pasek — identyczna paleta co karta medytacji, ale tylko jeden
-       element (licznik medytacji). justify-content: flex-start, bo bez
-       space-around pojedyncza ikona zostawałaby wycentrowana. */
+    /* Złoty pasek — identyczna paleta co karta medytacji. Pojedyncza pozycja
+       z ikoną + listą tytułów medytacji w programie. Lista może być długa,
+       więc cała linia jest obcinana ellipsis (nowrap); pełną treść user
+       zobaczy w tooltipie (title na .gold-bar-item). */
     .gold-bar {
         display: flex; align-items: center;
         background: #C5A56C;
         padding: 18px 28px;
         margin: 0 -28px 20px;
+        min-width: 0;
     }
     .gold-bar-item {
-        display: inline-flex; align-items: center; gap: 10px;
+        display: flex; align-items: center; gap: 12px;
         color: #FFFFFF;
-        font-size: 15px;
+        font-size: 14px;
         font-weight: 500;
+        min-width: 0;
+        flex: 1;
     }
-    .gold-bar-icon { font-size: 20px; line-height: 1; }
-    .gold-bar-count {
-        font-variant-numeric: tabular-nums;
-        min-width: 14px; text-align: center;
-        font-size: 17px;
+    .gold-bar-icon { font-size: 20px; line-height: 1; flex-shrink: 0; }
+    .gold-bar-titles {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        min-width: 0;
+        letter-spacing: 0.01em;
     }
-    .gold-bar-label { opacity: 0.92; }
+    .gold-bar-empty {
+        opacity: 0.78;
+        font-style: italic;
+        font-weight: 400;
+    }
 
     .card-footer-meta {
         position: absolute;
