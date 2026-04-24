@@ -4,15 +4,15 @@
 @inject NavigationManager Nav
 @inject ThemeService Theme
 
-<div class="app-shell">
+<div class="app-shell @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
     <aside class="sidebar">
         <div class="sidebar-brand">
-            <span class="brand-icon">◎</span>
-            <span class="brand-name">Medytao</span>
-            <button class="theme-toggle" @onclick="ToggleTheme"
-                    title="@(Theme.IsDark ? "Switch to light theme" : "Switch to dark theme")">
-                @(Theme.IsDark ? "☀" : "☾")
-            </button>
+            <div class="brand-avatar">
+                <img src="img/meditation-avatar.png" alt="" />
+            </div>
+            <div class="brand-text">
+                <span class="brand-bold">MEDYTAO</span><span class="brand-light"> System</span>
+            </div>
         </div>
         <nav class="sidebar-nav">
             <NavLink href="/" Match="NavLinkMatch.All" class="nav-item">
@@ -32,27 +32,72 @@
         </div>
     </aside>
 
-    <main class="main-content">
-        @Body
-    </main>
+    <div class="main-column">
+        <header class="top-bar">
+            <button class="sidebar-toggle" @onclick="ToggleSidebar" title="Toggle sidebar" aria-label="Toggle sidebar">
+                <i class="fa-solid fa-bars" aria-hidden="true"></i>
+            </button>
+            <span class="top-bar-breadcrumb">@CurrentSectionName()</span>
+            <div class="top-bar-spacer"></div>
+            <button class="theme-toggle" @onclick="ToggleTheme"
+                    title="@(Theme.IsDark ? "Switch to light theme" : "Switch to dark theme")">
+                @(Theme.IsDark ? "☀" : "☾")
+            </button>
+        </header>
+        <main class="main-content">
+            @Body
+        </main>
+    </div>
 </div>
 
 @code {
+    // Stan zwinięcia sidebara — trzymany w layoucie, bo tylko hamburger w topbarze
+    // go przełącza. Brak persystencji między reloadami; to czysto wizualny toggle.
+    private bool _sidebarCollapsed;
+
     protected override void OnInitialized()
     {
-        // Inline script w index.html już nałożył wybrany motyw na <html>.
-        // Tu tylko synchronizujemy stan C# z wartością z localStorage,
-        // żeby ikona w toggle'u startowała w zgodzie z widokiem.
-        // Sync, bo musi być gotowe przed pierwszym renderem — inaczej pierwszy
-        // klik toggle'a flipuje z nieaktualnej bazy (_current=Light) i dla
-        // zapisanego "dark" wygląda jakby nic się nie działo.
+        // Theme: synchronizujemy ikonę toggle'a ze stanem z localStorage
+        // (inline script w index.html ustawił już klasę na <html> przed renderem).
         Theme.OnChanged += HandleThemeChanged;
         Theme.Initialize();
+
+        // Re-render topbara przy każdej nawigacji — breadcrumb pokazuje aktualną
+        // sekcję wywiedzioną z URL-a, więc po przejściu /programs → /categories
+        // etykieta musi się odświeżyć.
+        Nav.LocationChanged += HandleLocationChanged;
     }
 
     private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
 
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => InvokeAsync(StateHasChanged);
+
     private Task ToggleTheme() => Theme.ToggleAsync();
+
+    private void ToggleSidebar() => _sidebarCollapsed = !_sidebarCollapsed;
+
+    // Breadcrumb w topbarze — pojedyncza etykieta nazwy sekcji (nie pełna ścieżka
+    // typu "Home › Programs › Details"). Na stronie głównej pokazujemy "Home"
+    // dla spójności z designem, na pozostałych — nazwę sekcji. Strony
+    // szczegółowe (programs/{id}, meditations/{id}) dostają ogólny label;
+    // konkretny tytuł i tak pojawia się wewnątrz page-headera.
+    private string CurrentSectionName()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = relative.Split('?')[0].Trim('/');
+        if (string.IsNullOrEmpty(path)) return "Home";
+        return path switch
+        {
+            "categories" => "Categories",
+            "assets" => "Asset library",
+            "login" => "Login",
+            "register" => "Register",
+            var p when p.StartsWith("programs/") => "Program",
+            var p when p.StartsWith("meditations/") => "Meditation editor",
+            _ => "Home"
+        };
+    }
 
     private async Task Logout()
     {
@@ -63,65 +108,72 @@
     public void Dispose()
     {
         Theme.OnChanged -= HandleThemeChanged;
+        Nav.LocationChanged -= HandleLocationChanged;
     }
 }
 
 <style>
-    /* Sidebar ma stały granatowy kolor (#012e48) niezależnie od motywu —
-       zawartość bazuje na przezroczystej bieli żeby kontrast był niezmienny
-       w trybie jasnym i ciemnym. Motyw dotyczy wyłącznie głównego obszaru. */
+    /* Sidebar zachowuje stały granatowy kolor (#012e48) niezależnie od motywu —
+       zawartość bazuje na przezroczystej bieli, żeby kontrast był niezmienny
+       w trybie jasnym i ciemnym. Motyw dotyczy wyłącznie prawej kolumny. */
 
     .app-shell { display: flex; height: 100vh; overflow: hidden; }
 
     .sidebar {
-        width: 220px; min-width: 220px;
+        width: 240px; min-width: 240px;
         background: #012e48;
         border-right: 1px solid rgba(255,255,255,0.06);
         display: flex; flex-direction: column;
         padding: 0;
         color: rgba(255,255,255,0.85);
+        transition: width 0.22s ease, min-width 0.22s ease, border-right-width 0.22s ease;
+        overflow: hidden;
+    }
+    /* Zwinięcie sidebara do zera — używamy width zamiast margin-left, żeby
+       główna kolumna płynnie rozszerzała się razem z animacją (flex layout
+       rozdziela brakującą szerokość). */
+    .app-shell.sidebar-collapsed .sidebar {
+        width: 0; min-width: 0;
+        border-right-width: 0;
     }
 
     .sidebar-brand {
-        display: flex; align-items: center; gap: 10px;
-        padding: 20px 20px 16px;
+        display: flex; align-items: center; gap: 12px;
+        padding: 18px 20px;
         border-bottom: 1px solid rgba(255,255,255,0.08);
-        font-size: 15px; font-weight: 500;
         color: #ffffff;
+        min-height: 72px;
+        flex-shrink: 0;
     }
 
-    .brand-icon { font-size: 20px; }
-
-    .brand-name { flex: 1; }
-
-    .theme-toggle {
-        flex: 0 0 auto;
-        width: 28px; height: 28px;
-        border: 1px solid rgba(255,255,255,0.18);
+    .brand-avatar {
+        width: 44px; height: 44px;
         border-radius: 50%;
-        background: rgba(255,255,255,0.08);
-        color: rgba(255,255,255,0.85);
-        font-size: 13px; line-height: 1;
-        cursor: pointer;
+        background: rgba(255,255,255,0.04);
         display: inline-flex; align-items: center; justify-content: center;
-        padding: 0;
-        transition: color 0.15s, border-color 0.15s, background 0.15s;
+        flex-shrink: 0;
+        overflow: hidden;
     }
-    .theme-toggle:hover {
-        background: rgba(255,255,255,0.16);
-        border-color: rgba(255,255,255,0.32);
-        color: #ffffff;
+    .brand-avatar img { width: 100%; height: 100%; display: block; }
+
+    .brand-text {
+        font-size: 20px;
+        white-space: nowrap;
+        letter-spacing: 0.01em;
     }
+    .brand-bold { font-weight: 700; }
+    .brand-light { font-weight: 300; opacity: 0.9; }
 
     .sidebar-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; flex: 1; }
 
     .nav-item {
         display: flex; align-items: center; gap: 10px;
-        padding: 8px 12px; border-radius: 6px;
+        padding: 10px 14px; border-radius: 6px;
         font-size: 14px; color: rgba(255,255,255,0.7);
         text-decoration: none; cursor: pointer;
         background: none; border: none; width: 100%; text-align: left;
         transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
     }
 
     .nav-item:hover, .nav-item.active {
@@ -139,6 +191,66 @@
 
     .logout-btn { color: rgba(255,255,255,0.5); }
     .logout-btn:hover { color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.06); }
+
+    /* Prawa kolumna: top-bar (pasek nawigacyjny) + główny scrollowalny content.
+       Topbar ma stałą wysokość, content zajmuje resztę i sam scrolluje. */
+    .main-column {
+        flex: 1;
+        display: flex; flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .top-bar {
+        display: flex; align-items: center; gap: 16px;
+        height: 56px;
+        padding: 0 24px;
+        background: var(--color-background-primary);
+        border-bottom: 1px solid var(--color-border-tertiary);
+        flex-shrink: 0;
+    }
+    .sidebar-toggle {
+        width: 36px; height: 36px;
+        border: none; background: transparent;
+        border-radius: 6px;
+        color: var(--color-text-secondary);
+        font-size: 16px; line-height: 1;
+        cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        transition: background 0.15s, color 0.15s;
+    }
+    .sidebar-toggle:hover {
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+    .top-bar-breadcrumb {
+        font-size: 15px;
+        color: var(--color-text-primary);
+        font-weight: 400;
+    }
+    .top-bar-spacer { flex: 1; }
+
+    /* Theme toggle przeniesiony z sidebara do topbara — naturalne miejsce na
+       globalne akcje UI, poza tym paleta "ciemny sidebar" kolidowała wizualnie
+       z kółkiem toggle'a. Tutaj cieniujemy się zmiennymi motywu. */
+    .theme-toggle {
+        width: 32px; height: 32px;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: 50%;
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-size: 13px; line-height: 1;
+        cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .theme-toggle:hover {
+        background: var(--color-background-secondary);
+        border-color: var(--color-text-primary);
+        color: var(--color-text-primary);
+    }
 
     .main-content { flex: 1; overflow-y: auto; background: var(--color-background-tertiary); }
 </style>
