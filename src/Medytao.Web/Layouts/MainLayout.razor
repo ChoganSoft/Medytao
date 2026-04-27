@@ -32,10 +32,18 @@
                 <span class="nav-label">Categories</span>
             </NavLink>
 
-            @* Każda warstwa = osobna pozycja w menu. Każdy link prowadzi do
-               tej samej strony z innym route-paramem; strona reaguje na
-               OnParametersSet i ładuje zasoby pod aktualną warstwę. *@
+            @* Każda warstwa = osobna pozycja w menu. Kolejność: Text → Music →
+               Nature → Fx, identycznie jak w edytorze medytacji
+               (Pages/MeditationEditor.razor → LayerDisplayOrder) i na
+               gold-barze karty medytacji (Pages/Index.razor → LayerCategories).
+               Każdy link prowadzi do tej samej strony z innym route-paramem;
+               strona reaguje na OnParametersSet i ładuje zasoby pod aktualną
+               warstwę. *@
             <div class="nav-section-label">Asset library</div>
+            <NavLink href="/assets/text" class="nav-item nav-sub" title="Text library">
+                <i class="nav-icon fa-solid fa-comment" aria-hidden="true"></i>
+                <span class="nav-label">Text</span>
+            </NavLink>
             <NavLink href="/assets/music" class="nav-item nav-sub" title="Music library">
                 <i class="nav-icon fa-solid fa-music" aria-hidden="true"></i>
                 <span class="nav-label">Music</span>
@@ -43,10 +51,6 @@
             <NavLink href="/assets/nature" class="nav-item nav-sub" title="Nature library">
                 <i class="nav-icon fa-solid fa-wind" aria-hidden="true"></i>
                 <span class="nav-label">Nature</span>
-            </NavLink>
-            <NavLink href="/assets/text" class="nav-item nav-sub" title="Text library">
-                <i class="nav-icon fa-solid fa-comment" aria-hidden="true"></i>
-                <span class="nav-label">Text</span>
             </NavLink>
             <NavLink href="/assets/fx" class="nav-item nav-sub" title="Fx library">
                 <i class="nav-icon fa-solid fa-drum" aria-hidden="true"></i>
