@@ -41,7 +41,7 @@
         <div class="asset-grid">
             @foreach (var a in _assets)
             {
-                <div class="asset-card @(a.IsGlobal ? "global" : "")">
+                <div class="asset-card @(a.IsShared ? "shared" : "")">
                     <i class="asset-icon @IconForLayer(a.LayerType)" aria-hidden="true"></i>
                     <div class="asset-details">
                         <div class="asset-name" title="@a.FileName">@a.FileName</div>
@@ -51,15 +51,27 @@
                         </div>
                     </div>
                     <AudioPreviewButton Url="@a.Url" />
-                    @if (a.IsGlobal)
+
+                    @if (a.IsMine)
                     {
-                        @* Globalne zasoby (OwnerId == null) są dla wszystkich;
-                           zwykły user nie może ich usunąć. Pokazujemy badge zamiast delete. *@
-                        <span class="global-badge" title="Shared by all users">Global</span>
+                        @* Toggle widoczności — tylko dla swoich zasobów. Klik flipuje
+                           IsShared po stronie backendu i podmienia wpis na liście.
+                           Tytuł wyjaśnia stan i co się stanie po kliku. *@
+                        <button class="share-toggle @(a.IsShared ? "on" : "off")"
+                                @onclick="() => ToggleSharing(a)"
+                                disabled="@(_pendingShareId == a.Id)"
+                                title="@(a.IsShared ? "Shared with everyone — click to make private" : "Private — click to share with everyone")">
+                            <i class="@(a.IsShared ? "fa-solid fa-globe" : "fa-solid fa-lock")" aria-hidden="true"></i>
+                            <span>@(a.IsShared ? "Shared" : "Private")</span>
+                        </button>
+                        <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">×</button>
                     }
                     else
                     {
-                        <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">×</button>
+                        @* Cudzy shared albo zasób systemowy — read-only badge. *@
+                        <span class="shared-badge" title="Available to everyone">
+                            <i class="fa-solid fa-globe" aria-hidden="true"></i> Shared
+                        </span>
                     }
                 </div>
             }
@@ -79,6 +91,10 @@
     private List<Medytao.Shared.Models.AssetDto> _assets = [];
     private bool _loading = true, _uploading;
     private string _currentLayer = "Music";
+
+    // Id zasobu, którego toggle aktualnie czeka na backend — disable'ujemy
+    // przycisk, żeby user nie spamował klikiem zanim API odpowie.
+    private Guid? _pendingShareId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -138,6 +154,28 @@
         _assets.RemoveAll(a => a.Id == id);
     }
 
+    private async Task ToggleSharing(Medytao.Shared.Models.AssetDto current)
+    {
+        if (_pendingShareId is not null) return;
+        _pendingShareId = current.Id;
+        try
+        {
+            var updated = await AssetSvc.SetSharingAsync(current.Id, !current.IsShared);
+            if (updated is not null)
+            {
+                // Backend zwrócił świeży DTO z poprawnymi flagami (IsShared
+                // zaktualizowane, IsMine = true). Podmieniamy wpis w miejscu
+                // zachowując kolejność listy.
+                var idx = _assets.FindIndex(a => a.Id == current.Id);
+                if (idx >= 0) _assets[idx] = updated;
+            }
+        }
+        finally
+        {
+            _pendingShareId = null;
+        }
+    }
+
     // Case-insensitive match po znanych warstwach. Zwracamy kanoniczną pisownię
     // ("Music"/"Nature"/"Text"/"Fx") niezależnie od tego co user wpisał w URL.
     private static string? NormalizeLayer(string? raw)
@@ -191,14 +229,42 @@
 
     .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
     .asset-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 8px; }
-    .asset-card.global { background: var(--color-background-secondary); }
+    .asset-card.shared { background: var(--color-background-secondary); }
     .asset-icon { font-size: 20px; color: var(--color-text-secondary); }
     .asset-details { flex: 1; min-width: 0; }
     .asset-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset-meta { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
     .delete-btn { background: none; border: none; font-size: 18px; color: var(--color-text-tertiary); cursor: pointer; padding: 2px 6px; border-radius: 4px; }
     .delete-btn:hover { color: var(--color-text-danger); background: var(--color-background-danger); }
-    .global-badge { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-tertiary); border: 1px solid var(--color-border-tertiary); border-radius: 4px; padding: 2px 6px; }
+
+    /* Toggle udostępniania własnego zasobu. Stan "off" (private) — neutralny,
+       wyciszony; "on" (shared) — wyróżniony info-color, żeby od razu było
+       widać, które rzeczy user już wystawił innym. */
+    .share-toggle {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11px;
+        background: transparent;
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 4px;
+        padding: 4px 8px;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        transition: color .15s, border-color .15s, background .15s;
+    }
+    .share-toggle:hover { color: var(--color-text-primary); border-color: var(--color-border-secondary); }
+    .share-toggle.on { color: var(--color-text-info); border-color: var(--color-border-info); background: var(--color-background-info); }
+    .share-toggle:disabled { opacity: 0.5; cursor: wait; }
+
+    /* Read-only marker dla cudzych shared / seedów systemowych. Wizualnie
+       podobny do toggle'a w stanie "shared", ale bez tła i pointer-cursora. */
+    .shared-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 4px;
+        padding: 4px 8px;
+    }
 
     .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
     .empty-icon { font-size: 36px; margin-bottom: 12px; }

@@ -175,4 +175,13 @@ public class AssetService(HttpClient http)
     }
 
     public Task DeleteAsync(Guid id) => http.DeleteAsync($"/api/v1/assets/{id}");
+
+    // Toggle widoczności — autor zmienia czy jego zasób jest widoczny dla
+    // innych userów. Backend zwraca zaktualizowany DTO, więc UI może go
+    // od razu podmienić w liście bez ponownego pobierania całości.
+    public async Task<AssetDto?> SetSharingAsync(Guid id, bool isShared)
+    {
+        var response = await http.PatchAsJsonAsync($"/api/v1/assets/{id}/sharing", new { isShared });
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AssetDto>() : null;
+    }
 }

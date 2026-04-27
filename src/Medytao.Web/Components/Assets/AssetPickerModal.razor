@@ -31,7 +31,7 @@
                         <span class="asset-name">@asset.FileName</span>
                         <span class="asset-meta">
                             @asset.LayerType · @FormatSize(asset.SizeBytes)@(asset.DurationMs.HasValue ? $" · {FormatDuration(asset.DurationMs.Value)}" : "")
-                            @if (asset.IsGlobal) { <span class="global-tag">global</span> }
+                            @if (asset.IsShared && !asset.IsMine) { <span class="global-tag">shared</span> }
                         </span>
                     </div>
                     <AudioPreviewButton Url="@asset.Url" />

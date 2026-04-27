@@ -14,14 +14,28 @@ namespace Medytao.Domain.Entities;
 /// dodanie pól do podklas to "tylko" dodanie nullable kolumn, bez ruszania
 /// schemy <see cref="Track"/> (FK na bazową Asset jest polimorficzny).
 ///
-/// <see cref="OwnerId"/> jest nullable — null oznacza zasób globalny,
-/// dostępny dla wszystkich userów (potencjalnie seedowany przez admina).
-/// Non-null = zasób prywatny tego usera.
+/// <see cref="OwnerId"/> jest nullable — null oznacza zasób seedowany przez
+/// system (np. preinstalowana biblioteka), bez konkretnego autora. Non-null =
+/// zasób wgrany przez tego konkretnego usera. <see cref="IsShared"/> mówi, czy
+/// zasób ma być widoczny dla wszystkich userów (true) czy tylko dla autora
+/// (false). Łącznie:
+///   - OwnerId = null              → zasób systemowy, traktowany jak shared
+///   - OwnerId != null, IsShared=false → prywatny dla autora
+///   - OwnerId != null, IsShared=true  → udostępniony przez autora innym
+/// Tylko autor może przełączać <see cref="IsShared"/> swojego zasobu.
 /// </summary>
 public abstract class Asset : BaseEntity
 {
     public Guid? OwnerId { get; set; }
     public User? Owner { get; set; }
+
+    /// <summary>
+    /// True = zasób widoczny dla wszystkich userów. False = tylko dla autora.
+    /// Dla zasobów systemowych (OwnerId == null) wartość nie ma znaczenia —
+    /// repo i tak włącza je do listy każdego usera; ustawiamy false dla
+    /// porządku w bazie.
+    /// </summary>
+    public bool IsShared { get; set; }
 
     /// <summary>
     /// Warstwa, do której zasób pasuje. Jednocześnie pełni funkcję dyskryminatora

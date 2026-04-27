@@ -114,12 +114,13 @@ public class AssetRepository(AppDbContext db) : IAssetRepository
         db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
 
     public async Task<IEnumerable<Asset>> GetVisibleForUserAsync(Guid userId, LayerType layerType, CancellationToken ct = default) =>
-        // Globalne (OwnerId IS NULL) + prywatne danego usera. Filtr po LayerType
+        // Widzimy: własne (OwnerId == userId), systemowe (OwnerId IS NULL) i
+        // udostępnione przez innych (IsShared == true). Filtr po LayerType
         // realnie schodzi do warunku na kolumnie dyskryminatora w SQL — EF
         // wybiera odpowiednią podklasę (MusicAsset/NatureAsset/...) automatycznie.
         await db.Assets
             .Where(a => a.LayerType == layerType
-                     && (a.OwnerId == null || a.OwnerId == userId))
+                     && (a.OwnerId == null || a.OwnerId == userId || a.IsShared))
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(ct);
 
