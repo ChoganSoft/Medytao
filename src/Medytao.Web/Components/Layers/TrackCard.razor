@@ -48,6 +48,24 @@
                     <span class="loop-x">×</span>
                 }
             </div>
+
+            @* Slider tempa — wyłącznie dla warstwy Text. Trzymamy go w głównym
+               pasku (a nie w expanded detail), żeby user widział go od razu —
+               spowolnienie jest częstym ustawieniem dla narracji, nie zaawansowaną
+               opcją. Zakres 0.75–1.25, krok 0.05 (sweet spot z preservesPitch). *@
+            @if (LayerType == "Text")
+            {
+                <div class="speed-control" title="Playback speed (1.00× = normal)">
+                    <span class="speed-icon">⏱</span>
+                    <input type="range" min="0.75" max="1.25" step="0.05"
+                           value="@_playbackRate.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                           @oninput="e => OnPlaybackRateInput(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                           @onchange="e => OnPlaybackRateChange(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                           class="medytao-slider speed-slider"
+                           style="--slider-fill: @SpeedFillPercent()%" />
+                    <span class="speed-value">@_playbackRate.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)×</span>
+                </div>
+            }
         </div>
 
         <button class="remove-btn" @onclick:stopPropagation="true" @onclick="Remove" title="Remove track">×</button>
@@ -74,31 +92,6 @@
                 <span class="detail-label">Crossfade to next</span>
                 <input type="number" min="0" step="100" @bind="_crossfadeMs" class="ms-input" /> ms
             </div>
-
-            @* Slider tempa — wyłącznie dla warstwy Text. Reszta warstw nie
-               dostaje go w UI; wartość w DTO i tak zostaje 1.0, więc backend
-               nigdy nie dostanie "lewej" prędkości z innej warstwy. Zakres
-               0.75–1.25 trzymamy jako UX-owy "sweet spot": preservesPitch
-               daje czyste rezultaty, ekstrema bez zmiany pitcha brzmią
-               cyfrowo (artefakty time-stretchu). Krok 0.05 = 11 pozycji. *@
-            @if (LayerType == "Text")
-            {
-                <div class="detail-row speed-row">
-                    <span class="detail-label">Speed</span>
-                    <input type="range" min="0.75" max="1.25" step="0.05"
-                           value="@_playbackRate.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                           @oninput="e => OnPlaybackRateInput(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
-                           @onchange="e => OnPlaybackRateChange(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
-                           class="medytao-slider speed-slider"
-                           style="--slider-fill: @SpeedFillPercent()%"
-                           title="Playback speed (1.00× = normal)" />
-                    <span class="speed-value">@_playbackRate.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)×</span>
-                    @if (Math.Abs(_playbackRate - 1.0f) > 0.001f)
-                    {
-                        <button class="speed-reset" @onclick="ResetPlaybackRate" title="Reset to 1.00×">↺</button>
-                    }
-                </div>
-            }
 
             <div class="detail-actions">
                 <button class="btn-save" @onclick="SaveDetail">Save changes</button>
@@ -199,14 +192,6 @@
         await OnChanged.InvokeAsync();
     }
 
-    private async Task ResetPlaybackRate()
-    {
-        _playbackRate = 1.0f;
-        await PlaybackSession.SetTrackPlaybackRateAsync(LayerId, Track.Id, 1.0f);
-        await PersistAsync();
-        await OnChanged.InvokeAsync();
-    }
-
     // Wypełnienie suwaka 0–100% w obrębie zakresu 0.75–1.25 (długość 0.5).
     private int SpeedFillPercent()
     {
@@ -303,29 +288,25 @@
         background: var(--color-background-primary);
         color: var(--color-text-primary); font-size: 13px;
     }
-    /* Slider tempa — zajmuje pełną szerokość rzędu, żeby user miał miejsce
-       na precyzyjne drag-i. Etykieta po lewej (jak w innych detail-row),
-       slider rozciąga się elastycznie, a na końcu wartość i przycisk reset. */
-    .detail-row.speed-row { flex: 1 1 100%; gap: 12px; }
-    .speed-slider { flex: 1; min-width: 160px; max-width: 320px; }
+    /* Slider tempa w głównym pasku tracka. Mniejszy niż volume (60px) bo
+       zakres jest węższy i kompaktowy, plus etykieta z aktualną wartością.
+       Pojawia się tylko przy trackach warstwy Text — w innych warstwach
+       go nie ma w ogóle. */
+    .speed-control {
+        display: flex; align-items: center; gap: 4px;
+        padding: 2px 8px; border-radius: 20px;
+        border: 1px solid var(--color-border-secondary);
+        background: none;
+    }
+    .speed-icon { font-size: 12px; color: var(--color-text-secondary); }
+    .speed-slider { width: 60px; }
     .speed-value {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--color-text-secondary);
-        min-width: 48px;
+        min-width: 38px;
         text-align: right;
         font-variant-numeric: tabular-nums;
     }
-    .speed-reset {
-        background: none;
-        border: 1px solid var(--color-border-secondary);
-        border-radius: 4px;
-        padding: 2px 8px;
-        font-size: 13px;
-        color: var(--color-text-secondary);
-        cursor: pointer;
-        line-height: 1;
-    }
-    .speed-reset:hover { color: var(--color-text-primary); border-color: var(--color-border-primary); }
 
     .detail-actions { width: 100%; margin-top: 4px; }
     .btn-save {
