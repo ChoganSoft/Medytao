@@ -6,11 +6,15 @@
 
 // ── medytaoAudio ──────────────────────────────────────────────────────────────
 window.medytaoAudio = {
-    play(audioEl, volume) {
+    // play(audioEl, volume, rate?) — rate opcjonalny (kompatybilność wstecz).
+    // Jeśli podany, ustawiamy preservesPitch + playbackRate przed play(),
+    // żeby pierwszy sample już leciał w docelowym tempie.
+    play(audioEl, volume, rate) {
         if (!audioEl) return;
         if (typeof volume === 'number') {
             audioEl.volume = Math.max(0, Math.min(1, volume));
         }
+        applyRateToEl(audioEl, rate);
         audioEl.currentTime = 0;
         audioEl.play().catch(err => console.warn('Audio play failed:', err));
     },
@@ -33,6 +37,14 @@ window.medytaoAudio = {
         audioEl.volume = Math.max(0, Math.min(1, volume));
     },
 
+    // Live-update tempa preview-a. Wołane z AudioPreviewButton podczas drag-u
+    // suwaka Speed w TrackCard. preservesPitch=true zachowuje wysokość tonu
+    // — zmiana tempa nie zmienia "głębokości" lektora.
+    setRate(audioEl, rate) {
+        if (!audioEl) return;
+        applyRateToEl(audioEl, rate);
+    },
+
     pauseAll() {
         document.querySelectorAll('audio').forEach(a => {
             try { a.pause(); } catch { }
@@ -48,6 +60,21 @@ window.medytaoAudio = {
         };
     }
 };
+
+// Helper współdzielony przez medytaoAudio i medytaoPlayer (ten drugi ma
+// własną wewnętrzną kopię applyRate w IIFE poniżej — duplikujemy świadomie,
+// żeby IIFE nie musiał sięgać do globala).
+function applyRateToEl(audioEl, rate) {
+    const r = (typeof rate === 'number' && isFinite(rate) && rate > 0)
+        ? Math.max(0.5, Math.min(2.0, rate))
+        : 1.0;
+    try { audioEl.preservesPitch = true; } catch { }
+    try { audioEl.mozPreservesPitch = true; } catch { }
+    try { audioEl.webkitPreservesPitch = true; } catch { }
+    try { audioEl.playbackRate = r; } catch (e) {
+        console.warn('medytaoAudio: playbackRate set failed', e);
+    }
+}
 
 // Alias dla kompatybilności wstecz.
 window.meditationPlayer = window.medytaoAudio;
