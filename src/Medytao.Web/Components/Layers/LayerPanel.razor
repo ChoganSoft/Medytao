@@ -117,6 +117,17 @@
     private string _localPreset = "Off";
     private float _localMix;
 
+    // Shadow-y trzymają ostatnio widzianą wartość parametru z parenta. Bez
+    // nich OnParametersSet (wywoływane przy każdym tickcie progress-timera
+    // sesji playbacku) nadpisywałoby _local* aktualnym Layer.X — w środku
+    // drag-u resetowałoby suwak do starej wartości, bo parent dostaje świeży
+    // DTO dopiero po release (persist + refetch). Dzięki shadow-om kopiujemy
+    // do _local tylko gdy parametr faktycznie się zmienił z zewnątrz.
+    // NaN jako początkowa wartość = pierwszy OnParametersSet zawsze przejdzie.
+    private float _shadowVolume = float.NaN;
+    private string? _shadowPreset;
+    private float _shadowMix = float.NaN;
+
     // Lista presetów do wyrenderowania pill-buttonów. Kolejność świadoma:
     // Off → Room → Hall = od minimum do maximum efektu, użytkownik intuicyjnie
     // klikając w prawo "dodaje" reverbu. Strings = wartości wysyłane do API.
@@ -131,10 +142,32 @@
 
     protected override void OnParametersSet()
     {
-        _localVolume = Layer.Volume;
-        _localPreset = string.IsNullOrWhiteSpace(Layer.ReverbPreset) ? "Off" : Layer.ReverbPreset;
-        _localMix = Layer.ReverbMix;
+        // Aktualizuj lokalny stan TYLKO gdy zmienił się parametr od poprzedniego
+        // OnParametersSet — inaczej tickujący progress-timer w czasie drag-u
+        // resetowałby suwak. NaN-comparison: `NaN != X` jest zawsze true,
+        // więc pierwszy render zawsze załapie wartości z DTO.
+        if (!FloatEquals(_shadowVolume, Layer.Volume))
+        {
+            _shadowVolume = Layer.Volume;
+            _localVolume = Layer.Volume;
+        }
+        var incomingPreset = string.IsNullOrWhiteSpace(Layer.ReverbPreset) ? "Off" : Layer.ReverbPreset;
+        if (!string.Equals(_shadowPreset, incomingPreset, StringComparison.Ordinal))
+        {
+            _shadowPreset = incomingPreset;
+            _localPreset = incomingPreset;
+        }
+        if (!FloatEquals(_shadowMix, Layer.ReverbMix))
+        {
+            _shadowMix = Layer.ReverbMix;
+            _localMix = Layer.ReverbMix;
+        }
     }
+
+    // Porównanie z tolerancją + traktowanie NaN jako "różne" (NaN != cokolwiek
+    // w IEEE 754, więc pierwszy raz przepuszczamy initialize).
+    private static bool FloatEquals(float a, float b) =>
+        !float.IsNaN(a) && !float.IsNaN(b) && Math.Abs(a - b) < 0.0001f;
 
     private async Task DragVolume(float volume)
     {
