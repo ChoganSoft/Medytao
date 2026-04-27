@@ -32,7 +32,7 @@
     else if (!_assets.Any())
     {
         <div class="empty-state">
-            <div class="empty-icon">@IconForLayer(_currentLayer)</div>
+            <i class="empty-icon @IconForLayer(_currentLayer)" aria-hidden="true"></i>
             <p>No @_currentLayer.ToLowerInvariant() assets yet. Upload files to start building meditations.</p>
         </div>
     }
@@ -42,7 +42,7 @@
             @foreach (var a in _assets)
             {
                 <div class="asset-card @(a.IsGlobal ? "global" : "")">
-                    <div class="asset-icon">@IconForLayer(a.LayerType)</div>
+                    <i class="asset-icon @IconForLayer(a.LayerType)" aria-hidden="true"></i>
                     <div class="asset-details">
                         <div class="asset-name" title="@a.FileName">@a.FileName</div>
                         <div class="asset-meta">
@@ -161,13 +161,17 @@
     // tu rozszerzymy MIME-y dla zakładki Text.
     private static string AcceptForLayer(string layer) => "audio/*";
 
+    // Klasy Font Awesome — te same co w sidebarze i na gold-barze karty
+    // medytacji (Pages/Index.razor → LayerCategories oraz Components/Layers/
+    // LayerPanel.razor → LayerIcon). Spójna semantyka: Music = nuta, Nature =
+    // wiatr, Text = dymek wypowiedzi, Fx = bęben.
     private static string IconForLayer(string layer) => layer switch
     {
-        "Music" => "\u266A",   // nuta
-        "Nature" => "\u2698",  // kwiatek
-        "Text" => "\u2630",    // poziome linie (skrypt/lektor)
-        "Fx" => "\u2737",      // gwiazdka
-        _ => "\u25CF"
+        "Music" => "fa-solid fa-music",
+        "Nature" => "fa-solid fa-wind",
+        "Text" => "fa-solid fa-comment",
+        "Fx" => "fa-solid fa-drum",
+        _ => "fa-solid fa-circle"
     };
 
     private static string FormatSize(long bytes) =>

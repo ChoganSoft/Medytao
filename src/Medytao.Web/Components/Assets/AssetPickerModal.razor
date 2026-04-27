@@ -26,7 +26,7 @@
             {
                 <div class="asset-row @(_selected == asset.Id ? "selected" : "")"
                      @onclick="() => _selected = asset.Id">
-                    <span class="asset-type-icon">@LayerIcon(asset.LayerType)</span>
+                    <i class="asset-type-icon @LayerIcon(asset.LayerType)" aria-hidden="true"></i>
                     <div class="asset-info">
                         <span class="asset-name">@asset.FileName</span>
                         <span class="asset-meta">
@@ -93,13 +93,16 @@
         if (_selected.HasValue) await OnPick.InvokeAsync(_selected.Value);
     }
 
+    // Klasy Font Awesome — te same co w sidebarze, edytorze medytacji i
+    // gold-barze karty medytacji. Spójność wizualna: ta sama warstwa wszędzie
+    // ma tę samą ikonę.
     private static string LayerIcon(string layer) => layer switch
     {
-        "Music" => "\u266A",
-        "Nature" => "\u2698",
-        "Text" => "\u2630",
-        "Fx" => "\u2737",
-        _ => "\u25CF"
+        "Music" => "fa-solid fa-music",
+        "Nature" => "fa-solid fa-wind",
+        "Text" => "fa-solid fa-comment",
+        "Fx" => "fa-solid fa-drum",
+        _ => "fa-solid fa-circle"
     };
 
     private static string FormatSize(long bytes) =>
