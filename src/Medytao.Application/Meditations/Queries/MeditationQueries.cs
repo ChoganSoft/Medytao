@@ -21,6 +21,7 @@ public class GetMeditationByIdHandler(IMeditationRepository repo, IStorageServic
                 l.Tracks.OrderBy(t => t.Order).Select(t => new TrackDto(
                     t.Id, t.Order, t.Volume, t.LoopCount,
                     t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,
+                    t.PlaybackRate,
                     new AssetDto(
                         t.Asset.Id, t.Asset.FileName, t.Asset.ContentType,
                         t.Asset.SizeBytes, t.Asset.DurationMs,

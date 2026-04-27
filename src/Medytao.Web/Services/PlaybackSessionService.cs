@@ -77,7 +77,10 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                     trackId = t.Id,
                     url = t.Asset.Url,
                     volume = t.Volume,
-                    loopCount = t.LoopCount
+                    loopCount = t.LoopCount,
+                    // PlaybackRate = 1.0 oznacza "graj normalnie" — JS i tak
+                    // ustawia preservesPitch=true, więc dla 1.0 nie ma efektu.
+                    playbackRate = t.PlaybackRate
                 }).ToArray()
             }).ToArray();
 
@@ -135,6 +138,18 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     {
         if (_sessionId is null) return;
         await SafeInvoke("medytaoPlayer.setTrackVolume", _sessionId, layerId.ToString(), trackId.ToString(), volume);
+    }
+
+    /// <summary>
+    /// Live-update tempa odtwarzania pojedynczego tracka. Jeśli track akurat
+    /// gra w swojej warstwie — efekt słychać natychmiast (HTMLMediaElement
+    /// .playbackRate aplikuje się on-the-fly z preservesPitch). Jeśli nie —
+    /// silnik zapamięta wartość i użyje jej, gdy track wejdzie w sekwencję.
+    /// </summary>
+    public async Task SetTrackPlaybackRateAsync(Guid layerId, Guid trackId, float rate)
+    {
+        if (_sessionId is null) return;
+        await SafeInvoke("medytaoPlayer.setTrackPlaybackRate", _sessionId, layerId.ToString(), trackId.ToString(), rate);
     }
 
     private void StartProgressTimer()

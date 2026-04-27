@@ -160,6 +160,10 @@ public class TrackConfiguration : IEntityTypeConfiguration<Track>
         b.Property(t => t.FadeOutMs).HasDefaultValue(0);
         b.Property(t => t.StartOffsetMs).HasDefaultValue(0);
         b.Property(t => t.CrossfadeMs).HasDefaultValue(0);
+        // PlaybackRate: stare wiersze (przed migracją) nie mają wartości — default
+        // 1.0 zachowuje semantykę "graj normalnie", więc istniejące tracki nie
+        // zmieniają zachowania po dodaniu kolumny.
+        b.Property(t => t.PlaybackRate).HasDefaultValue(1.0f);
 
         b.HasOne(t => t.Asset)
             .WithMany(a => a.Tracks)

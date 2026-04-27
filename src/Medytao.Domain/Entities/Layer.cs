@@ -43,4 +43,16 @@ public class Track : BaseEntity
     public int FadeOutMs { get; set; } = 0;
     public int StartOffsetMs { get; set; } = 0;
     public int CrossfadeMs { get; set; } = 0;  // crossfade to the next track
+
+    /// <summary>
+    /// Tempo odtwarzania, 1.0 = normalna prędkość. Dziś używane wyłącznie
+    /// w warstwie Text (lektor) — UI pokazuje slider 0.75–1.25× tylko przy
+    /// trackach warstwy Text. Field jest jednak per-Track (a nie per-Layer),
+    /// żeby user mógł różnym fragmentom narracji ustawić różne tempo.
+    ///
+    /// Backend nie wymusza zakresu — granice są UX-em po stronie Web (slider
+    /// trzyma 0.75–1.25). Web Audio z preservesPitch radzi sobie dobrze
+    /// w tym przedziale; ekstrema dają artefakty, ale to świadomy wybór usera.
+    /// </summary>
+    public float PlaybackRate { get; set; } = 1.0f;
 }

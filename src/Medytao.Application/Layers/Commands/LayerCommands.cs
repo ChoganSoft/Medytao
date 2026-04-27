@@ -31,7 +31,8 @@ public record AddTrackCommand(
     Guid LayerId, Guid AssetId,
     float Volume = 1f, int LoopCount = 1,
     int FadeInMs = 0, int FadeOutMs = 0,
-    int StartOffsetMs = 0, int CrossfadeMs = 0
+    int StartOffsetMs = 0, int CrossfadeMs = 0,
+    float PlaybackRate = 1f
 ) : IRequest<TrackDto>;
 
 public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackRepo, IAssetRepository assetRepo, IUnitOfWork uow, IStorageService storage)
@@ -65,6 +66,7 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
             FadeOutMs = cmd.FadeOutMs,
             StartOffsetMs = cmd.StartOffsetMs,
             CrossfadeMs = cmd.CrossfadeMs,
+            PlaybackRate = cmd.PlaybackRate,
             Asset = asset
         };
 
@@ -77,7 +79,8 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
 // ── Update track ───────────────────────────────────────────────────────────────
 public record UpdateTrackCommand(
     Guid TrackId, float Volume, int LoopCount,
-    int FadeInMs, int FadeOutMs, int StartOffsetMs, int CrossfadeMs
+    int FadeInMs, int FadeOutMs, int StartOffsetMs, int CrossfadeMs,
+    float PlaybackRate
 ) : IRequest<TrackDto>;
 
 public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorageService storage)
@@ -94,6 +97,10 @@ public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorage
         track.FadeOutMs = cmd.FadeOutMs;
         track.StartOffsetMs = cmd.StartOffsetMs;
         track.CrossfadeMs = cmd.CrossfadeMs;
+        // Sanityzacja zakresu po stronie serwera — UI trzyma 0.75–1.25, ale
+        // chronimy się przed manualnie spreparowanym requestem. Skrajne
+        // wartości i tak są klamrowane do tego okna.
+        track.PlaybackRate = Math.Clamp(cmd.PlaybackRate, 0.5f, 2.0f);
         track.UpdatedAt = DateTimeOffset.UtcNow;
 
         await repo.UpdateAsync(track, ct);
@@ -138,6 +145,7 @@ internal static class LayerMappings
     public static TrackDto ToDto(this Track t, IStorageService storage) => new(
         t.Id, t.Order, t.Volume, t.LoopCount,
         t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,
+        t.PlaybackRate,
         // Tu DTO trafia w karty tracków w edytorze — toggle/kosz nie są
         // pokazywane, więc IsMine ustawiamy zachowawczo na false. IsShared
         // odzwierciedla rzeczywisty stan, na wypadek gdyby UI miał kiedyś

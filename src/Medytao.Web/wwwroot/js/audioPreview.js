@@ -56,14 +56,18 @@ window.meditationPlayer = window.medytaoAudio;
 // Sesja playbacku. Każda warstwa gra sekwencyjnie, warstwy grają równolegle.
 //
 // startSession(layers) → sessionId
-//   layers: [{ id, volume, muted, tracks: [{ trackId, url, volume, loopCount }] }]
+//   layers: [{ id, volume, muted, tracks: [{ trackId, url, volume, loopCount, playbackRate }] }]
 //   loopCount: 0 = loop forever (blocks next tracks), N = play N times.
+//   playbackRate: 1.0 = normalna prędkość. preservesPitch=true zachowuje wysokość
+//     tonu — slowdown brzmi naturalnie, bez "grunting" efektu.
 //
 // stopSession(sessionId) — zatrzymuje i zwalnia wszystkie <audio>.
 // setLayerVolume(sessionId, layerId, volume) — zmienia głośność warstwy w czasie rzeczywistym.
 // setLayerMuted(sessionId, layerId, muted) — wycisza / przywraca warstwę.
 // setTrackVolume(sessionId, layerId, trackId, volume) — zmienia głośność tracka (stosuje się
 //   od razu, jeśli ten track jest akurat odtwarzany w swojej warstwie).
+// setTrackPlaybackRate(sessionId, layerId, trackId, rate) — zmienia tempo tracka. Jeśli track
+//   leci, .playbackRate aplikuje się natychmiast; jeśli nie, wartość zostaje zapamiętana.
 
 (function () {
     const sessions = new Map(); // sessionId → { layers: [LayerState] }
@@ -88,11 +92,32 @@ window.meditationPlayer = window.medytaoAudio;
         // Detach previous listener if reusing element (we don't — fresh each time).
         const audio = createAudio(track.url);
         audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
+        applyRate(audio, track.playbackRate);
 
         audio.addEventListener('ended', () => onTrackEnded(state));
         state.audio = audio;
 
         audio.play().catch(err => console.warn('Medytao player: play failed', err));
+    }
+
+    // preservesPitch: spec-y wszystkich obecnych przeglądarek (Chrome/Edge/Firefox/Safari)
+    // już dawno wspierają standardową nazwę. Stary `mozPreservesPitch`/`webkitPreservesPitch`
+    // ustawiamy z czysto defensywnych powodów — koszt zerowy, a chroni przed dziwnymi WebView.
+    function applyRate(audio, rate) {
+        const r = clampRate(rate);
+        try { audio.preservesPitch = true; } catch { }
+        try { audio.mozPreservesPitch = true; } catch { }
+        try { audio.webkitPreservesPitch = true; } catch { }
+        try { audio.playbackRate = r; } catch (e) {
+            console.warn('Medytao player: playbackRate set failed', e);
+        }
+    }
+
+    function clampRate(v) {
+        if (typeof v !== 'number' || !isFinite(v) || v <= 0) return 1.0;
+        // Lustro walidacji w handlerze backend-u — spec dopuszcza więcej, ale
+        // ekstrema poza tym oknem brzmią źle nawet z preservesPitch.
+        return Math.max(0.5, Math.min(2.0, v));
     }
 
     function onTrackEnded(state) {
@@ -262,6 +287,30 @@ window.meditationPlayer = window.medytaoAudio;
                 layerId, trackId, volume: t.volume, isCurrent,
                 audioVolume: L.audio ? L.audio.volume : null,
                 layerVolume: L.layerVolume, muted: L.muted
+            });
+        },
+
+        // Real-time tempo pojedynczego tracka. Mutujemy state.tracks żeby
+        // następne wejście playCurrent wzięło nową wartość; jeśli track akurat
+        // leci, ustawiamy playbackRate na żywo. preservesPitch zostaje on
+        // (ustawione na początku przez applyRate).
+        setTrackPlaybackRate(sessionId, layerId, trackId, rate) {
+            const L = findLayer(sessionId, layerId);
+            if (!L) {
+                console.warn('[medytaoPlayer] setTrackPlaybackRate: layer not found', { sessionId, layerId });
+                return;
+            }
+            const t = L.tracks.find(x => x && eqId(x.trackId, trackId));
+            if (!t) {
+                console.warn('[medytaoPlayer] setTrackPlaybackRate: track not found', { layerId, trackId });
+                return;
+            }
+            t.playbackRate = clampRate(rate);
+            const current = L.tracks[L.index];
+            const isCurrent = current && eqId(current.trackId, trackId);
+            if (isCurrent && L.audio) applyRate(L.audio, t.playbackRate);
+            console.debug('[medytaoPlayer] setTrackPlaybackRate', {
+                layerId, trackId, rate: t.playbackRate, isCurrent
             });
         },
 
