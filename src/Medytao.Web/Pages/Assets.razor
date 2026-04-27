@@ -1,4 +1,9 @@
+@* Pojedyncza strona obsługująca cztery URL-e — po jednym per warstwa.
+   `/assets` (bez segmentu) wpada tu też dla wstecznej kompatybilności i
+   przekierowuje do `/assets/music`. Każdy link w menu ma swój route,
+   więc NavLink ten aktywny podświetla się sam. *@
 @page "/assets"
+@page "/assets/{Layer}"
 @inject AssetService AssetSvc
 @inject AuthService Auth
 @inject NavigationManager Nav
@@ -6,26 +11,13 @@
 <div class="page-wrap">
     <div class="page-header">
         <div>
-            <h1>Asset library</h1>
-            <p class="subtitle">Audio files organized by meditation layer</p>
+            <h1>@_currentLayer library</h1>
+            <p class="subtitle">@SubtitleFor(_currentLayer)</p>
         </div>
         <label class="btn-primary">
-            + Upload to @_currentLayer
+            + Upload @_currentLayer.ToLowerInvariant()
             <InputFile OnChange="HandleUpload" accept="@AcceptForLayer(_currentLayer)" multiple style="display:none" />
         </label>
-    </div>
-
-    @* Zakładki = warstwy. Klik przełącza listę i kontekst uploadu. *@
-    <div class="layer-tabs">
-        @foreach (var layer in Layers)
-        {
-            <button type="button"
-                    class="layer-tab @(_currentLayer == layer ? "active" : "")"
-                    @onclick="() => SwitchLayer(layer)">
-                <span class="tab-icon">@IconForLayer(layer)</span>
-                <span>@layer</span>
-            </button>
-        }
     </div>
 
     @if (_uploading)
@@ -76,8 +68,13 @@
 </div>
 
 @code {
-    // Kolejność zakładek = kolejność warstw w edytorze (Music → Nature → Text → Fx).
-    private static readonly string[] Layers = ["Music", "Nature", "Text", "Fx"];
+    // Route param. Domyślnie pusty (gdy ktoś wszedł na /assets bez segmentu) —
+    // wtedy w OnParametersSet redirektujemy do /assets/music. Walidacja: jeśli
+    // segment jest spoza listy znanych warstw, też wpada w redirect (cicha
+    // sanityzacja, brak 404 — to nie jest publiczny URL na zewnątrz).
+    [Parameter] public string? Layer { get; set; }
+
+    private static readonly string[] KnownLayers = ["Music", "Nature", "Text", "Fx"];
 
     private List<Medytao.Shared.Models.AssetDto> _assets = [];
     private bool _loading = true, _uploading;
@@ -91,6 +88,26 @@
             Nav.NavigateTo("/login");
             return;
         }
+    }
+
+    // Reagujemy na każdą zmianę route-paramu (kliknięcie w NavLinka innej warstwy
+    // bez przeładowania komponentu). NormalizeLayer rzuca null, jeśli segment
+    // jest nieznany albo pusty — wtedy redirect na default. Po normalizacji
+    // ładujemy listę tylko gdy faktycznie zmienił się _currentLayer.
+    protected override async Task OnParametersSetAsync()
+    {
+        var normalized = NormalizeLayer(Layer);
+        if (normalized is null)
+        {
+            // Segment pusty/niepasujący — domyślnie kierujemy do Music.
+            // forceLoad: false, bo i tak SPA, oszczędzamy pełny reload.
+            Nav.NavigateTo("/assets/music", forceLoad: false, replace: true);
+            return;
+        }
+
+        if (normalized == _currentLayer && !_loading) return;
+
+        _currentLayer = normalized;
         await LoadAssetsAsync();
     }
 
@@ -101,20 +118,13 @@
         _loading = false;
     }
 
-    private async Task SwitchLayer(string layer)
-    {
-        if (_currentLayer == layer) return;
-        _currentLayer = layer;
-        await LoadAssetsAsync();
-    }
-
     private async Task HandleUpload(InputFileChangeEventArgs e)
     {
         _uploading = true;
         foreach (var file in e.GetMultipleFiles(10))
         {
             await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
-            // LayerType uploadu = aktualnie wybrana zakładka. Backend tworzy
+            // LayerType uploadu = aktualnie otwarta strona. Backend tworzy
             // odpowiednią podklasę (MusicAsset/NatureAsset/...).
             var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, _currentLayer);
             if (result is not null) _assets.Insert(0, result);
@@ -127,6 +137,24 @@
         await AssetSvc.DeleteAsync(id);
         _assets.RemoveAll(a => a.Id == id);
     }
+
+    // Case-insensitive match po znanych warstwach. Zwracamy kanoniczną pisownię
+    // ("Music"/"Nature"/"Text"/"Fx") niezależnie od tego co user wpisał w URL.
+    private static string? NormalizeLayer(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return KnownLayers.FirstOrDefault(l =>
+            string.Equals(l, raw, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string SubtitleFor(string layer) => layer switch
+    {
+        "Music" => "Background music and ambient tracks",
+        "Nature" => "Forest, rain, waves and other nature sounds",
+        "Text" => "Spoken word recordings (your own narration)",
+        "Fx" => "Gongs, bells and sound accents",
+        _ => "Audio files for this layer"
+    };
 
     // TextAsset dziś trzyma plik audio (lektor nagrany przez usera). Gdy w
     // przyszłości warstwa Text dostanie generowany TTS (skrypt + voice ID),
@@ -154,12 +182,6 @@
     h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
     .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
     .btn-primary { padding: 9px 18px; border-radius: 6px; background: var(--color-text-primary); color: var(--color-background-primary); border: none; font-size: 14px; font-weight: 500; cursor: pointer; }
-
-    .layer-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-border-tertiary); margin-bottom: 24px; }
-    .layer-tab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 14px; color: var(--color-text-secondary); cursor: pointer; transition: color .15s, border-color .15s; }
-    .layer-tab:hover { color: var(--color-text-primary); }
-    .layer-tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-text-primary); }
-    .tab-icon { font-size: 16px; }
 
     .upload-banner { padding: 10px 16px; background: var(--color-background-info); color: var(--color-text-info); border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
 

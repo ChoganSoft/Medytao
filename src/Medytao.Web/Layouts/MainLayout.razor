@@ -18,9 +18,11 @@
         </div>
         <nav class="sidebar-nav">
             @* Ikony FA dobrane semantycznie: program = warstwy medytacji
-               (layer-group), kategoria = tag, asset library = audio (music),
-               sign out = nowy FA "right-from-bracket" (stary "sign-out-alt"
-               nadal działa jako alias, ale preferujemy v6-native nazwy). *@
+               (layer-group), kategoria = tag, biblioteki zasobów per warstwa
+               (music/wind/comment/drum — te same co w gold-barze karty
+               medytacji, patrz Pages/Index.razor → LayerCategories), sign out =
+               nowy FA "right-from-bracket" (stary "sign-out-alt" nadal działa
+               jako alias, ale preferujemy v6-native nazwy). *@
             <NavLink href="/" Match="NavLinkMatch.All" class="nav-item" title="My programs">
                 <i class="nav-icon fa-solid fa-layer-group" aria-hidden="true"></i>
                 <span class="nav-label">My programs</span>
@@ -29,9 +31,26 @@
                 <i class="nav-icon fa-solid fa-tags" aria-hidden="true"></i>
                 <span class="nav-label">Categories</span>
             </NavLink>
-            <NavLink href="/assets" class="nav-item" title="Asset library">
+
+            @* Każda warstwa = osobna pozycja w menu. Każdy link prowadzi do
+               tej samej strony z innym route-paramem; strona reaguje na
+               OnParametersSet i ładuje zasoby pod aktualną warstwę. *@
+            <div class="nav-section-label">Asset library</div>
+            <NavLink href="/assets/music" class="nav-item nav-sub" title="Music library">
                 <i class="nav-icon fa-solid fa-music" aria-hidden="true"></i>
-                <span class="nav-label">Asset library</span>
+                <span class="nav-label">Music</span>
+            </NavLink>
+            <NavLink href="/assets/nature" class="nav-item nav-sub" title="Nature library">
+                <i class="nav-icon fa-solid fa-wind" aria-hidden="true"></i>
+                <span class="nav-label">Nature</span>
+            </NavLink>
+            <NavLink href="/assets/text" class="nav-item nav-sub" title="Text library">
+                <i class="nav-icon fa-solid fa-comment" aria-hidden="true"></i>
+                <span class="nav-label">Text</span>
+            </NavLink>
+            <NavLink href="/assets/fx" class="nav-item nav-sub" title="Fx library">
+                <i class="nav-icon fa-solid fa-drum" aria-hidden="true"></i>
+                <span class="nav-label">Fx</span>
             </NavLink>
         </nav>
         <div class="sidebar-footer">
@@ -122,14 +141,20 @@
         return path switch
         {
             "categories" => "Categories",
-            "assets" => "Asset library",
             "login" => "Login",
             "register" => "Register",
+            // Każda warstwa ma własny breadcrumb — żeby user widział w jakiej
+            // bibliotece siedzi. Capitalize pierwsza litera segmentu po /assets/.
+            var p when p.StartsWith("assets/") => $"{Capitalize(p["assets/".Length..])} library",
+            "assets" => "Asset library", // legacy URL bez warstwy — Assets.razor i tak przekieruje na /assets/music
             var p when p.StartsWith("programs/") => "Program",
             var p when p.StartsWith("meditations/") => "Meditation editor",
             _ => "Home"
         };
     }
+
+    private static string Capitalize(string s) =>
+        string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..].ToLowerInvariant();
 
     private async Task Logout()
     {
@@ -222,6 +247,24 @@
     }
 
     .sidebar-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; flex: 1; }
+
+    /* Etykieta grupy ("Asset library") nad pod-pozycjami warstw. Mała,
+       spacjowana, lekko przezroczysta — czytelnie sygnalizuje że poniżej
+       idą cztery powiązane wpisy, ale nie konkuruje wagą z linkami. */
+    .nav-section-label {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: rgba(255,255,255,0.4);
+        padding: 14px 14px 4px;
+    }
+    .sidebar-collapsed .nav-section-label { display: none; }
+
+    /* Pod-pozycje warstw lekko wcięte w stosunku do linków-głównych —
+       wizualne ugrupowanie pod nagłówkiem "Asset library". */
+    .nav-sub { padding-left: 24px; }
+    .sidebar-collapsed .nav-sub { padding-left: 0; }
 
     .nav-item {
         display: flex; align-items: center; gap: 10px;
