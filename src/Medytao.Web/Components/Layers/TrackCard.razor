@@ -99,18 +99,6 @@
                     }
                 </div>
             }
-            else
-            {
-                @* DIAGNOSTIC: jeśli widzisz ten wpis w panelu rozwinięcia tracka
-                   warstwy, którą uważasz za Text — to znaczy, że parametr LayerType
-                   przychodzi tu inny niż "Text" (np. pusty string albo nazwa
-                   z innym case'em). Wpis usuniemy po naprawie. *@
-                <div class="detail-row" style="opacity:.55;font-size:11px;">
-                    <span class="detail-label">debug</span>
-                    <span>LayerType param = "@LayerType"</span>
-                </div>
-            }
-
             <div class="detail-actions">
                 <button class="btn-save" @onclick="SaveDetail">Save changes</button>
             </div>
