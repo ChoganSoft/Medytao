@@ -4,15 +4,15 @@
 <div class="modal-backdrop" @onclick="() => OnClose.InvokeAsync()">
     <div class="picker-modal" @onclick:stopPropagation="true">
         <div class="picker-header">
-            <h2>Asset library</h2>
+            <h2>@LayerType assets</h2>
             <button class="close-btn" @onclick="() => OnClose.InvokeAsync()">×</button>
         </div>
 
         <div class="picker-toolbar">
-            <input class="search-input" placeholder="Search assets…" @bind="_search" @bind:event="oninput" />
+            <input class="search-input" placeholder="Search @LayerType.ToLowerInvariant() assets…" @bind="_search" @bind:event="oninput" />
             <label class="upload-btn">
                 + Upload
-                <InputFile OnChange="HandleUpload" accept="audio/*,text/*" style="display:none" />
+                <InputFile OnChange="HandleUpload" accept="audio/*" style="display:none" />
             </label>
         </div>
 
@@ -26,15 +26,15 @@
             {
                 <div class="asset-row @(_selected == asset.Id ? "selected" : "")"
                      @onclick="() => _selected = asset.Id">
-                    <span class="asset-type-icon">@TypeIcon(asset.Type)</span>
+                    <span class="asset-type-icon">@LayerIcon(asset.LayerType)</span>
                     <div class="asset-info">
                         <span class="asset-name">@asset.FileName</span>
-                        <span class="asset-meta">@asset.Type · @FormatSize(asset.SizeBytes)@(asset.DurationMs.HasValue ? $" · {FormatDuration(asset.DurationMs.Value)}" : "")</span>
+                        <span class="asset-meta">
+                            @asset.LayerType · @FormatSize(asset.SizeBytes)@(asset.DurationMs.HasValue ? $" · {FormatDuration(asset.DurationMs.Value)}" : "")
+                            @if (asset.IsGlobal) { <span class="global-tag">global</span> }
+                        </span>
                     </div>
-                    @if (asset.Type == "Audio")
-                    {
-                        <AudioPreviewButton Url="@asset.Url" />
-                    }
+                    <AudioPreviewButton Url="@asset.Url" />
                     @if (_selected == asset.Id)
                     {
                         <span class="check">✓</span>
@@ -43,7 +43,7 @@
             }
             @if (!Filtered.Any())
             {
-                <div class="empty-assets">No assets found. Upload one to get started.</div>
+                <div class="empty-assets">No @LayerType.ToLowerInvariant() assets found. Upload one to get started.</div>
             }
         </div>
 
@@ -55,6 +55,9 @@
 </div>
 
 @code {
+    // LayerType filtruje listę i steruje uploadem — picker zawsze otwiera się
+    // z konkretnej warstwy edytora i nigdy nie miesza zasobów między warstwami.
+    [Parameter, EditorRequired] public string LayerType { get; set; } = "Music";
     [Parameter] public EventCallback<Guid> OnPick { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
@@ -69,16 +72,17 @@
             : _assets.Where(a => a.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync() =>
-        _assets = await AssetSvc.GetAllAsync() ?? [];
+        _assets = await AssetSvc.GetByLayerAsync(LayerType) ?? [];
 
     private async Task HandleUpload(InputFileChangeEventArgs e)
     {
         _uploading = true;
         foreach (var file in e.GetMultipleFiles(5))
         {
-            var type = file.ContentType.StartsWith("audio") ? "Audio" : "Text";
             await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
-            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, type);
+            // Upload zawsze do bieżącej warstwy — backend tworzy odpowiednią
+            // podklasę Asset (MusicAsset/NatureAsset/TextAsset/FxAsset).
+            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, LayerType);
             if (result is not null) _assets.Insert(0, result);
         }
         _uploading = false;
@@ -89,7 +93,15 @@
         if (_selected.HasValue) await OnPick.InvokeAsync(_selected.Value);
     }
 
-    private static string TypeIcon(string type) => type == "Audio" ? "♪" : "≡";
+    private static string LayerIcon(string layer) => layer switch
+    {
+        "Music" => "\u266A",
+        "Nature" => "\u2698",
+        "Text" => "\u2630",
+        "Fx" => "\u2737",
+        _ => "\u25CF"
+    };
+
     private static string FormatSize(long bytes) =>
         bytes < 1024 * 1024 ? $"{bytes / 1024}KB" : $"{bytes / (1024 * 1024.0):F1}MB";
     private static string FormatDuration(int ms) =>
@@ -149,6 +161,7 @@
     .asset-info { flex: 1; min-width: 0; }
     .asset-name { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset-meta { font-size: 11px; color: var(--color-text-tertiary); }
+    .global-tag { margin-left: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; border: 1px solid var(--color-border-tertiary); border-radius: 3px; padding: 1px 5px; }
     .check { color: var(--color-text-info); font-weight: 500; }
 
     .empty-assets { padding: 32px 24px; text-align: center; color: var(--color-text-tertiary); font-size: 13px; }

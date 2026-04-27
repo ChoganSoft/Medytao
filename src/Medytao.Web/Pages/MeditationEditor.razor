@@ -43,7 +43,7 @@ else
                 <LayerPanel
                     Layer="layer"
                     OnLayerChanged="HandleLayerChanged"
-                    OnOpenAssetPicker="() => OpenAssetPicker(layer.Id)" />
+                    OnOpenAssetPicker="() => OpenAssetPicker(layer.Id, layer.Type)" />
             }
         </div>
     </div>
@@ -52,15 +52,20 @@ else
     @if (_assetPickerLayerId.HasValue)
     {
         <AssetPickerModal
+            LayerType="@_assetPickerLayerType"
             OnPick="HandleAssetPicked"
-            OnClose="() => _assetPickerLayerId = null" />
+            OnClose="ClosePicker" />
     }
 }
 
 @code {
     [Parameter] public Guid Id { get; set; }
     private MeditationDetailDto? _meditation;
+    // Para (id, type) warstwy, dla której otworzyliśmy picker. Type idzie do
+    // AssetPickerModal, żeby filtrował zasoby po LayerType i uploadem trafiał
+    // do właściwej podklasy Asset.
     private Guid? _assetPickerLayerId;
+    private string _assetPickerLayerType = "Music";
 
     // Kontekst programu z którego user wszedł do edytora (query string
     // "?program=…"). Używany tylko do decyzji gdzie wrócić po kliku Back —
@@ -136,7 +141,13 @@ else
         }
     }
 
-    private void OpenAssetPicker(Guid layerId) => _assetPickerLayerId = layerId;
+    private void OpenAssetPicker(Guid layerId, string layerType)
+    {
+        _assetPickerLayerId = layerId;
+        _assetPickerLayerType = layerType;
+    }
+
+    private void ClosePicker() => _assetPickerLayerId = null;
 
     private async Task HandleAssetPicked(Guid assetId)
     {

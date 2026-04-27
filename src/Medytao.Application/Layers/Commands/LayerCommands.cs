@@ -45,6 +45,13 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
         var asset = await assetRepo.GetByIdAsync(cmd.AssetId, ct)
             ?? throw new KeyNotFoundException($"Asset {cmd.AssetId} not found.");
 
+        // Asset musi pasować do warstwy — np. nie wkładamy MusicAsset do Text-warstwy.
+        // Picker w UI i tak filtruje po LayerType, ale walidacja po stronie command
+        // chroni przed podszytą requestem ID-zasobu z innej warstwy.
+        if (asset.LayerType != layer.Type)
+            throw new InvalidOperationException(
+                $"Asset belongs to layer '{asset.LayerType}', cannot add to layer '{layer.Type}'.");
+
         var nextOrder = layer.Tracks.Any() ? layer.Tracks.Max(t => t.Order) + 1 : 0;
 
         var track = new Track
@@ -134,7 +141,9 @@ internal static class LayerMappings
         new AssetDto(
             t.Asset.Id, t.Asset.FileName, t.Asset.ContentType,
             t.Asset.SizeBytes, t.Asset.DurationMs,
-            t.Asset.Type.ToString(), t.Asset.Tags,
+            t.Asset.LayerType.ToString(),
+            t.Asset.OwnerId is null,
+            t.Asset.Tags,
             storage.GetPublicUrl(t.Asset.BlobKey)
         ));
 }

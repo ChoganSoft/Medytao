@@ -7,12 +7,25 @@
     <div class="page-header">
         <div>
             <h1>Asset library</h1>
-            <p class="subtitle">Your uploaded audio and text files</p>
+            <p class="subtitle">Audio files organized by meditation layer</p>
         </div>
         <label class="btn-primary">
-            + Upload files
-            <InputFile OnChange="HandleUpload" accept="audio/*,text/*" multiple style="display:none" />
+            + Upload to @_currentLayer
+            <InputFile OnChange="HandleUpload" accept="@AcceptForLayer(_currentLayer)" multiple style="display:none" />
         </label>
+    </div>
+
+    @* Zakładki = warstwy. Klik przełącza listę i kontekst uploadu. *@
+    <div class="layer-tabs">
+        @foreach (var layer in Layers)
+        {
+            <button type="button"
+                    class="layer-tab @(_currentLayer == layer ? "active" : "")"
+                    @onclick="() => SwitchLayer(layer)">
+                <span class="tab-icon">@IconForLayer(layer)</span>
+                <span>@layer</span>
+            </button>
+        }
     </div>
 
     @if (_uploading)
@@ -27,8 +40,8 @@
     else if (!_assets.Any())
     {
         <div class="empty-state">
-            <div class="empty-icon">⊙</div>
-            <p>No assets yet. Upload audio or text files to start building meditations.</p>
+            <div class="empty-icon">@IconForLayer(_currentLayer)</div>
+            <p>No @_currentLayer.ToLowerInvariant() assets yet. Upload files to start building meditations.</p>
         </div>
     }
     else
@@ -36,20 +49,26 @@
         <div class="asset-grid">
             @foreach (var a in _assets)
             {
-                <div class="asset-card">
-                    <div class="asset-icon">@(a.Type == "Audio" ? "♪" : "≡")</div>
+                <div class="asset-card @(a.IsGlobal ? "global" : "")">
+                    <div class="asset-icon">@IconForLayer(a.LayerType)</div>
                     <div class="asset-details">
                         <div class="asset-name" title="@a.FileName">@a.FileName</div>
                         <div class="asset-meta">
-                            @a.Type · @FormatSize(a.SizeBytes)
+                            @a.LayerType · @FormatSize(a.SizeBytes)
                             @if (a.DurationMs.HasValue) { <text> · @FormatDuration(a.DurationMs.Value)</text> }
                         </div>
                     </div>
-                    @if (a.Type == "Audio")
+                    <AudioPreviewButton Url="@a.Url" />
+                    @if (a.IsGlobal)
                     {
-                        <AudioPreviewButton Url="@a.Url" />
+                        @* Globalne zasoby (OwnerId == null) są dla wszystkich;
+                           zwykły user nie może ich usunąć. Pokazujemy badge zamiast delete. *@
+                        <span class="global-badge" title="Shared by all users">Global</span>
                     }
-                    <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">×</button>
+                    else
+                    {
+                        <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">×</button>
+                    }
                 </div>
             }
         </div>
@@ -57,8 +76,12 @@
 </div>
 
 @code {
+    // Kolejność zakładek = kolejność warstw w edytorze (Music → Nature → Text → Fx).
+    private static readonly string[] Layers = ["Music", "Nature", "Text", "Fx"];
+
     private List<Medytao.Shared.Models.AssetDto> _assets = [];
     private bool _loading = true, _uploading;
+    private string _currentLayer = "Music";
 
     protected override async Task OnInitializedAsync()
     {
@@ -68,8 +91,21 @@
             Nav.NavigateTo("/login");
             return;
         }
-        _assets = await AssetSvc.GetAllAsync() ?? [];
+        await LoadAssetsAsync();
+    }
+
+    private async Task LoadAssetsAsync()
+    {
+        _loading = true;
+        _assets = await AssetSvc.GetByLayerAsync(_currentLayer) ?? [];
         _loading = false;
+    }
+
+    private async Task SwitchLayer(string layer)
+    {
+        if (_currentLayer == layer) return;
+        _currentLayer = layer;
+        await LoadAssetsAsync();
     }
 
     private async Task HandleUpload(InputFileChangeEventArgs e)
@@ -77,9 +113,10 @@
         _uploading = true;
         foreach (var file in e.GetMultipleFiles(10))
         {
-            var type = file.ContentType.StartsWith("audio") ? "Audio" : "Text";
             await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
-            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, type);
+            // LayerType uploadu = aktualnie wybrana zakładka. Backend tworzy
+            // odpowiednią podklasę (MusicAsset/NatureAsset/...).
+            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, _currentLayer);
             if (result is not null) _assets.Insert(0, result);
         }
         _uploading = false;
@@ -91,6 +128,20 @@
         _assets.RemoveAll(a => a.Id == id);
     }
 
+    // TextAsset dziś trzyma plik audio (lektor nagrany przez usera). Gdy w
+    // przyszłości warstwa Text dostanie generowany TTS (skrypt + voice ID),
+    // tu rozszerzymy MIME-y dla zakładki Text.
+    private static string AcceptForLayer(string layer) => "audio/*";
+
+    private static string IconForLayer(string layer) => layer switch
+    {
+        "Music" => "\u266A",   // nuta
+        "Nature" => "\u2698",  // kwiatek
+        "Text" => "\u2630",    // poziome linie (skrypt/lektor)
+        "Fx" => "\u2737",      // gwiazdka
+        _ => "\u25CF"
+    };
+
     private static string FormatSize(long bytes) =>
         bytes < 1024 * 1024 ? $"{bytes / 1024}KB" : $"{bytes / (1024 * 1024.0):F1}MB";
     private static string FormatDuration(int ms) =>
@@ -99,21 +150,29 @@
 
 <style>
     .page-wrap { padding: 32px 40px; max-width: 1100px; margin: 0 auto; }
-    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
     .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
     .btn-primary { padding: 9px 18px; border-radius: 6px; background: var(--color-text-primary); color: var(--color-background-primary); border: none; font-size: 14px; font-weight: 500; cursor: pointer; }
+
+    .layer-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-border-tertiary); margin-bottom: 24px; }
+    .layer-tab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 14px; color: var(--color-text-secondary); cursor: pointer; transition: color .15s, border-color .15s; }
+    .layer-tab:hover { color: var(--color-text-primary); }
+    .layer-tab.active { color: var(--color-text-primary); border-bottom-color: var(--color-text-primary); }
+    .tab-icon { font-size: 16px; }
 
     .upload-banner { padding: 10px 16px; background: var(--color-background-info); color: var(--color-text-info); border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
 
     .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
     .asset-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 8px; }
+    .asset-card.global { background: var(--color-background-secondary); }
     .asset-icon { font-size: 20px; color: var(--color-text-secondary); }
     .asset-details { flex: 1; min-width: 0; }
     .asset-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset-meta { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
     .delete-btn { background: none; border: none; font-size: 18px; color: var(--color-text-tertiary); cursor: pointer; padding: 2px 6px; border-radius: 4px; }
     .delete-btn:hover { color: var(--color-text-danger); background: var(--color-background-danger); }
+    .global-badge { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-tertiary); border: 1px solid var(--color-border-tertiary); border-radius: 4px; padding: 2px 6px; }
 
     .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
     .empty-icon { font-size: 36px; margin-bottom: 12px; }
