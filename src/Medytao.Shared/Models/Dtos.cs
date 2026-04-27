@@ -5,9 +5,12 @@ namespace Medytao.Shared.Models;
 // Wynika z konkretnej podklasy w domenie (TPH) i jednocześnie steruje filtrowaniem
 // w UI — picker w warstwie X pokazuje tylko zasoby z LayerType == X.
 //
-// IsGlobal: true, gdy zasób jest widoczny dla wszystkich userów (OwnerId == null
-// w bazie). Frontend używa do np. wyszarzenia przycisku "Delete" — globalnych
-// nie usuwa zwykły user.
+// IsShared: true, jeśli zasób jest widoczny dla wszystkich userów. Pochodzi z
+// flagi IsShared w bazie LUB z OwnerId == NULL (zasoby systemowe traktujemy
+// jako z definicji shared — i tak nikt nie ma do nich własności).
+// IsMine: true, jeśli zalogowany user jest autorem (może edytować widoczność,
+// może usunąć). Dla cudzych shared/seedów = false. UI pokazuje toggle
+// udostępniania i kosz wyłącznie gdy IsMine.
 public record AssetDto(
     Guid Id,
     string FileName,
@@ -15,7 +18,8 @@ public record AssetDto(
     long SizeBytes,
     int? DurationMs,
     string LayerType,
-    bool IsGlobal,
+    bool IsShared,
+    bool IsMine,
     string? Tags,
     string Url
 );

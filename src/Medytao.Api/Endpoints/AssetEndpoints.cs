@@ -26,11 +26,14 @@ public static class AssetEndpoints
             if (!Enum.TryParse<LayerType>(layerType, ignoreCase: true, out var parsedLayer))
                 return Results.BadRequest($"Unknown layer type '{layerType}'.");
 
-            var assets = await assetRepo.GetVisibleForUserAsync(user.GetUserId(), parsedLayer);
+            var userId = user.GetUserId();
+            var assets = await assetRepo.GetVisibleForUserAsync(userId, parsedLayer);
             var dtos = assets.Select(a => new AssetDto(
                 a.Id, a.FileName, a.ContentType, a.SizeBytes,
                 a.DurationMs, a.LayerType.ToString(),
-                a.OwnerId is null, a.Tags,
+                IsShared: a.IsShared || a.OwnerId is null,
+                IsMine: a.OwnerId == userId,
+                a.Tags,
                 storage.GetPublicUrl(a.BlobKey)));
             return Results.Ok(dtos);
         });
@@ -72,10 +75,27 @@ public static class AssetEndpoints
             return Results.Created($"/api/v1/assets/{result.Id}", result);
         }).DisableAntiforgery();
 
+        // PATCH /assets/{id}/sharing — autor zmienia widoczność swojego zasobu.
+        // Body: { "isShared": true|false }. Zwraca zaktualizowany AssetDto, żeby
+        // UI mogło bez refetcha podmienić wpis na liście.
+        group.MapPatch("/{id:guid}/sharing", async (
+            Guid id,
+            SetSharingRequest body,
+            ClaimsPrincipal user,
+            IMediator mediator) =>
+        {
+            var dto = await mediator.Send(new SetAssetSharingCommand(id, user.GetUserId(), body.IsShared));
+            return Results.Ok(dto);
+        });
+
         group.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal user, IMediator mediator) =>
         {
             await mediator.Send(new DeleteAssetCommand(id, user.GetUserId()));
             return Results.NoContent();
         });
     }
+
+    // Lokalny request DTO — body PATCH-a. Nie idzie do Shared, bo to detal
+    // protokołu HTTP konkretnego endpointu, nie kontrakt domenowy.
+    private record SetSharingRequest(bool IsShared);
 }

@@ -138,11 +138,16 @@ internal static class LayerMappings
     public static TrackDto ToDto(this Track t, IStorageService storage) => new(
         t.Id, t.Order, t.Volume, t.LoopCount,
         t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,
+        // Tu DTO trafia w karty tracków w edytorze — toggle/kosz nie są
+        // pokazywane, więc IsMine ustawiamy zachowawczo na false. IsShared
+        // odzwierciedla rzeczywisty stan, na wypadek gdyby UI miał kiedyś
+        // pokazywać badge "Shared" obok track-card.
         new AssetDto(
             t.Asset.Id, t.Asset.FileName, t.Asset.ContentType,
             t.Asset.SizeBytes, t.Asset.DurationMs,
             t.Asset.LayerType.ToString(),
-            t.Asset.OwnerId is null,
+            IsShared: t.Asset.IsShared || t.Asset.OwnerId is null,
+            IsMine: false,
             t.Asset.Tags,
             storage.GetPublicUrl(t.Asset.BlobKey)
         ));

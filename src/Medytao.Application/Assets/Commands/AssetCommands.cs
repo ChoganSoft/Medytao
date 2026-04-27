@@ -8,9 +8,10 @@ namespace Medytao.Application.Assets.Commands;
 
 // ── Upload asset ───────────────────────────────────────────────────────────────
 // LayerType decyduje, którą podklasę Asset (Music/Nature/Text/Fx) tworzymy.
-// Zwykły user uploaduje tylko dla siebie (OwnerId = jego id); globalne zasoby
-// seedujemy admin-flow albo bezpośrednim INSERT-em — endpoint nie wystawia
-// flagi "IsGlobal" celowo, żeby nie dało się przez przypadek zasypać biblioteki.
+// Zwykły user uploaduje tylko dla siebie (OwnerId = jego id, IsShared = false).
+// Wystawienie zasobu innym idzie osobnym command-em SetAssetSharingCommand,
+// żeby świeży upload nie trafiał od razu do publicznej biblioteki przez
+// przypadek (user musi świadomie kliknąć toggle).
 public record UploadAssetCommand(
     Guid OwnerId,
     Stream FileStream,
@@ -53,13 +54,51 @@ public class UploadAssetHandler(IAssetRepository assetRepo, IStorageService stor
         await assetRepo.AddAsync(asset, ct);
         await uow.SaveChangesAsync(ct);
 
+        // Świeży upload: IsShared = false (asset.IsShared default), IsMine = true
+        // (autor to wgrywający user). Toggle w UI pozwoli mu zmienić IsShared.
         return new AssetDto(
             asset.Id, asset.FileName, asset.ContentType,
             asset.SizeBytes, asset.DurationMs,
             asset.LayerType.ToString(),
-            asset.OwnerId is null,
+            IsShared: asset.IsShared || asset.OwnerId is null,
+            IsMine: true,
             asset.Tags,
             storage.GetPublicUrl(blobKey)
+        );
+    }
+}
+
+// ── Toggle asset sharing ───────────────────────────────────────────────────────
+// Zmienia flagę IsShared zasobu. Tylko autor (OwnerId == RequesterId) może
+// to zrobić. Seedów systemowych (OwnerId == null) nikt nie przełącza.
+public record SetAssetSharingCommand(Guid AssetId, Guid RequesterId, bool IsShared) : IRequest<AssetDto>;
+
+public class SetAssetSharingHandler(IAssetRepository assetRepo, IStorageService storage, IUnitOfWork uow)
+    : IRequestHandler<SetAssetSharingCommand, AssetDto>
+{
+    public async Task<AssetDto> Handle(SetAssetSharingCommand cmd, CancellationToken ct)
+    {
+        var asset = await assetRepo.GetByIdAsync(cmd.AssetId, ct)
+            ?? throw new KeyNotFoundException($"Asset {cmd.AssetId} not found.");
+
+        if (asset.OwnerId is null)
+            throw new UnauthorizedAccessException("System assets cannot be reshared by users.");
+
+        if (asset.OwnerId != cmd.RequesterId)
+            throw new UnauthorizedAccessException("You can only change sharing of your own assets.");
+
+        asset.IsShared = cmd.IsShared;
+        asset.UpdatedAt = DateTimeOffset.UtcNow;
+        await uow.SaveChangesAsync(ct);
+
+        return new AssetDto(
+            asset.Id, asset.FileName, asset.ContentType,
+            asset.SizeBytes, asset.DurationMs,
+            asset.LayerType.ToString(),
+            IsShared: asset.IsShared,
+            IsMine: true,
+            asset.Tags,
+            storage.GetPublicUrl(asset.BlobKey)
         );
     }
 }
@@ -75,10 +114,10 @@ public class DeleteAssetHandler(IAssetRepository assetRepo, IStorageService stor
         var asset = await assetRepo.GetByIdAsync(cmd.AssetId, ct)
             ?? throw new KeyNotFoundException($"Asset {cmd.AssetId} not found.");
 
-        // Globalne zasoby (OwnerId == null) nie należą do nikogo — zwykły user
-        // ich nie kasuje. Prywatne kasuje tylko właściciel.
+        // Systemowe zasoby (OwnerId == null) nie należą do nikogo — zwykły user
+        // ich nie kasuje. Prywatne i shared własne kasuje tylko autor.
         if (asset.OwnerId is null)
-            throw new UnauthorizedAccessException("Global assets cannot be deleted by users.");
+            throw new UnauthorizedAccessException("System assets cannot be deleted by users.");
 
         if (asset.OwnerId != cmd.RequesterId)
             throw new UnauthorizedAccessException("You do not own this asset.");
