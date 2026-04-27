@@ -7,7 +7,7 @@
     <div class="track-row" @onclick="ToggleExpand">
         <span class="drag-handle" @onclick:stopPropagation="true">⠿</span>
 
-        <AudioPreviewButton Url="@Track.Asset.Url" Volume="_volume" PlaybackRate="_playbackRate" />
+        <AudioPreviewButton Url="@Track.Asset.Url" Volume="_volume" PlaybackRate="_playbackRate" ReverbMix="_reverbMix" />
 
         <div class="track-info">
             <span class="track-filename">

@@ -29,7 +29,12 @@
     </span>
 </span>
 
-<audio @ref="_audioRef" src="@Url" preload="metadata" @onended="HandleEnded" @onloadedmetadata="HandleLoadedMetadata"></audio>
+<audio @ref="_audioRef" src="@Url" preload="metadata"
+       crossorigin="anonymous"
+       @onended="HandleEnded" @onloadedmetadata="HandleLoadedMetadata"></audio>
+@* crossorigin="anonymous": gdy preview gra plik z innego origin (blob storage),
+   bez tego atrybutu Web Audio "tainted-out" wyjście grafu — convolver dawałby
+   ciszę. Atrybut musi być na elemencie ZANIM JS doczepi MediaElementAudioSource. *@
 
 @code {
     [Parameter, EditorRequired] public string Url { get; set; } = "";
@@ -50,6 +55,16 @@
     /// </summary>
     [Parameter] public float PlaybackRate { get; set; } = 1.0f;
 
+    /// <summary>
+    /// Wet/dry mix reverbu (Hall) dla preview-a, 0..1. Analogicznie do Volume
+    /// i PlaybackRate — drag suwaka Reverb w TrackCard zmienia wartość, a my
+    /// pukają JS-owi (medytaoAudio.setReverbMix) by zaktualizował graf
+    /// preview-a na żywo. 0 = brak efektu (graf nie jest tworzony, zerowy
+    /// koszt CPU dla preview-ów dry tracków). Default 0 = no-op poza
+    /// TrackCard (asset library, picker zostają bez reverbu).
+    /// </summary>
+    [Parameter] public float ReverbMix { get; set; } = 0.0f;
+
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
     private ElementReference _audioRef;
@@ -58,6 +73,7 @@
     private double _duration;
     private float _lastAppliedVolume = float.NaN;
     private float _lastAppliedRate = float.NaN;
+    private float _lastAppliedReverbMix = float.NaN;
     private System.Timers.Timer? _progressTimer;
 
     // 0.0 .. 1.0 — ułamek odtworzony. Używane przez SVG ring do policzenia
@@ -108,9 +124,10 @@
         {
             // Zatrzymaj każde inne odtwarzanie na stronie.
             await JS.InvokeVoidAsync("medytaoAudio.pauseAll");
-            await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef, Volume, PlaybackRate);
+            await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef, Volume, PlaybackRate, ReverbMix);
             _lastAppliedVolume = Volume;
             _lastAppliedRate = PlaybackRate;
+            _lastAppliedReverbMix = ReverbMix;
             _playing = true;
             StartProgressTimer();
         }
@@ -138,6 +155,19 @@
             {
                 await JS.InvokeVoidAsync("medytaoAudio.setRate", _audioRef, PlaybackRate);
                 _lastAppliedRate = PlaybackRate;
+            }
+            catch { }
+        }
+
+        // Reverb wet/dry mix — drag suwaka Reverb w TrackCard. medytaoAudio
+        // tworzy graf lazy przy pierwszym mix > 0; gdy nie jest aktywny
+        // (mix == 0 i graf nie istnieje), no-op.
+        if (_playing && Math.Abs(_lastAppliedReverbMix - ReverbMix) > 0.0001f)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("medytaoAudio.setReverbMix", _audioRef, ReverbMix);
+                _lastAppliedReverbMix = ReverbMix;
             }
             catch { }
         }
