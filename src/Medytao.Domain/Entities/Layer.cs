@@ -14,6 +14,20 @@ public class Layer : BaseEntity
     public float Volume { get; set; } = 1.0f;   // master volume 0.0–1.0
     public bool Muted { get; set; } = false;
 
+    /// <summary>
+    /// Preset reverbu dla całej warstwy. Off = bypass (graf nie wpina
+    /// ConvolverNode-a). Room/Hall = syntetyczne IR generowane w kliencie.
+    /// </summary>
+    public LayerReverbPreset ReverbPreset { get; set; } = LayerReverbPreset.Off;
+
+    /// <summary>
+    /// Wet/dry mix reverbu, 0–1. 0 = tylko dry (efektywnie bypass nawet
+    /// gdy Preset != Off), 1 = tylko wet. Typowo 0.2–0.4 dla naturalnego
+    /// brzmienia. Stored osobno od Preset, żeby user mógł szybko ściszyć
+    /// efekt bez gubienia wyboru typu pomieszczenia.
+    /// </summary>
+    public float ReverbMix { get; set; } = 0.0f;
+
     public ICollection<Track> Tracks { get; set; } = [];
 }
 

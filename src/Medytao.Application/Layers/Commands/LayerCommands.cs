@@ -1,12 +1,16 @@
 using MediatR;
 using Medytao.Domain.Entities;
+using Medytao.Domain.Enums;
 using Medytao.Domain.Interfaces;
 using Medytao.Shared.Models;
 
 namespace Medytao.Application.Layers.Commands;
 
-// ── Update layer master volume / mute ─────────────────────────────────────────
-public record UpdateLayerCommand(Guid LayerId, float Volume, bool Muted) : IRequest<LayerDto>;
+// ── Update layer master volume / mute / reverb ────────────────────────────────
+public record UpdateLayerCommand(
+    Guid LayerId, float Volume, bool Muted,
+    string ReverbPreset, float ReverbMix
+) : IRequest<LayerDto>;
 
 public class UpdateLayerHandler(ILayerRepository repo, IUnitOfWork uow, IStorageService storage)
     : IRequestHandler<UpdateLayerCommand, LayerDto>
@@ -18,6 +22,14 @@ public class UpdateLayerHandler(ILayerRepository repo, IUnitOfWork uow, IStorage
 
         layer.Volume = cmd.Volume;
         layer.Muted = cmd.Muted;
+        // Preset: jeśli klient wyśle nieznaną wartość — zostawiamy obecny preset
+        // (defensywnie, nie psujemy stanu). UI nie ma jak wysłać nieznanej
+        // wartości, ale request mógłby przyjść spreparowany.
+        if (Enum.TryParse<LayerReverbPreset>(cmd.ReverbPreset, ignoreCase: true, out var preset))
+            layer.ReverbPreset = preset;
+        // Mix klamrowany 0..1 — UI trzyma slider w tym zakresie, ale
+        // chronimy się przed manualnym requestem.
+        layer.ReverbMix = Math.Clamp(cmd.ReverbMix, 0f, 1f);
         layer.UpdatedAt = DateTimeOffset.UtcNow;
 
         await repo.UpdateAsync(layer, ct);
@@ -140,6 +152,7 @@ internal static class LayerMappings
 {
     public static LayerDto ToDto(this Domain.Entities.Layer l, IStorageService storage) => new(
         l.Id, l.Type.ToString(), l.Volume, l.Muted,
+        l.ReverbPreset.ToString(), l.ReverbMix,
         l.Tracks.OrderBy(t => t.Order).Select(t => t.ToDto(storage)));
 
     public static TrackDto ToDto(this Track t, IStorageService storage) => new(

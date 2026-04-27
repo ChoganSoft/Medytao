@@ -72,6 +72,11 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                 id = l.Id,
                 volume = l.Volume,
                 muted = l.Muted,
+                // Reverb passed at start; JS routuje audio przez ConvolverNode
+                // tylko gdy preset != "Off" i mix > 0. Dla Off / mix=0 graf
+                // omija convolvera, więc CPU-koszt zerowy.
+                reverbPreset = l.ReverbPreset,
+                reverbMix = l.ReverbMix,
                 tracks = l.Tracks.OrderBy(t => t.Order).Select(t => new
                 {
                     trackId = t.Id,
@@ -150,6 +155,18 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     {
         if (_sessionId is null) return;
         await SafeInvoke("medytaoPlayer.setTrackPlaybackRate", _sessionId, layerId.ToString(), trackId.ToString(), rate);
+    }
+
+    /// <summary>
+    /// Live-update reverbu warstwy. Zmiana presetu = przeładowanie IR
+    /// w ConvolverNode-ie, zmiana mixu = liniowe wet/dry gain (bez
+    /// glitch-u w audio). Wołane z LayerPanel podczas drag-u suwaka
+    /// i zmian dropdown-a.
+    /// </summary>
+    public async Task SetLayerReverbAsync(Guid layerId, string preset, float mix)
+    {
+        if (_sessionId is null) return;
+        await SafeInvoke("medytaoPlayer.setLayerReverb", _sessionId, layerId.ToString(), preset, mix);
     }
 
     private void StartProgressTimer()
