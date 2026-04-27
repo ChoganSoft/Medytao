@@ -72,11 +72,6 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                 id = l.Id,
                 volume = l.Volume,
                 muted = l.Muted,
-                // Reverb passed at start; JS routuje audio przez ConvolverNode
-                // tylko gdy preset != "Off" i mix > 0. Dla Off / mix=0 graf
-                // omija convolvera, więc CPU-koszt zerowy.
-                reverbPreset = l.ReverbPreset,
-                reverbMix = l.ReverbMix,
                 tracks = l.Tracks.OrderBy(t => t.Order).Select(t => new
                 {
                     trackId = t.Id,
@@ -85,7 +80,11 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                     loopCount = t.LoopCount,
                     // PlaybackRate = 1.0 oznacza "graj normalnie" — JS i tak
                     // ustawia preservesPitch=true, więc dla 1.0 nie ma efektu.
-                    playbackRate = t.PlaybackRate
+                    playbackRate = t.PlaybackRate,
+                    // ReverbMix = 0 oznacza "bez efektu" — graf bypassuje convolver,
+                    // koszt CPU zerowy. >0 wpina sample do współdzielonego
+                    // ConvolverNode-a warstwy (Hall IR).
+                    reverbMix = t.ReverbMix
                 }).ToArray()
             }).ToArray();
 
@@ -158,15 +157,15 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Live-update reverbu warstwy. Zmiana presetu = przeładowanie IR
-    /// w ConvolverNode-ie, zmiana mixu = liniowe wet/dry gain (bez
-    /// glitch-u w audio). Wołane z LayerPanel podczas drag-u suwaka
-    /// i zmian dropdown-a.
+    /// Live-update wet/dry mixu reverbu pojedynczego tracka. Mutuje stan
+    /// silnika, a jeśli track akurat gra — zmienia gain-y w grafie audio
+    /// natychmiast. Współdzielony ConvolverNode (per-warstwa, Hall IR)
+    /// jest tworzony lazy przy pierwszym mix > 0 w danej warstwie.
     /// </summary>
-    public async Task SetLayerReverbAsync(Guid layerId, string preset, float mix)
+    public async Task SetTrackReverbMixAsync(Guid layerId, Guid trackId, float mix)
     {
         if (_sessionId is null) return;
-        await SafeInvoke("medytaoPlayer.setLayerReverb", _sessionId, layerId.ToString(), preset, mix);
+        await SafeInvoke("medytaoPlayer.setTrackReverbMix", _sessionId, layerId.ToString(), trackId.ToString(), mix);
     }
 
     private void StartProgressTimer()

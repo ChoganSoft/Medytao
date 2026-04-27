@@ -14,20 +14,6 @@ public class Layer : BaseEntity
     public float Volume { get; set; } = 1.0f;   // master volume 0.0–1.0
     public bool Muted { get; set; } = false;
 
-    /// <summary>
-    /// Preset reverbu dla całej warstwy. Off = bypass (graf nie wpina
-    /// ConvolverNode-a). Room/Hall = syntetyczne IR generowane w kliencie.
-    /// </summary>
-    public LayerReverbPreset ReverbPreset { get; set; } = LayerReverbPreset.Off;
-
-    /// <summary>
-    /// Wet/dry mix reverbu, 0–1. 0 = tylko dry (efektywnie bypass nawet
-    /// gdy Preset != Off), 1 = tylko wet. Typowo 0.2–0.4 dla naturalnego
-    /// brzmienia. Stored osobno od Preset, żeby user mógł szybko ściszyć
-    /// efekt bez gubienia wyboru typu pomieszczenia.
-    /// </summary>
-    public float ReverbMix { get; set; } = 0.0f;
-
     public ICollection<Track> Tracks { get; set; } = [];
 }
 
@@ -69,4 +55,19 @@ public class Track : BaseEntity
     /// w tym przedziale; ekstrema dają artefakty, ale to świadomy wybór usera.
     /// </summary>
     public float PlaybackRate { get; set; } = 1.0f;
+
+    /// <summary>
+    /// Wet/dry mix reverbu (Hall) dla pojedynczego sounda. 0 = czysto dry,
+    /// 1 = pełen wet. Per-Track (a nie per-Layer), bo różne sample w tej
+    /// samej warstwie mogą wymagać różnego "zalania" reverbem — np. lektor
+    /// dry, podkład muzyczny lekko zalany.
+    ///
+    /// Wybór architektoniczny: tylko jeden preset (Hall) zamiast enuma
+    /// presetów. Medytacja potrzebuje przestrzeni, nie różnorodności
+    /// pomieszczeń, a single IR upraszcza UI (jeden slider zamiast pill
+    /// + slider). Jeśli kiedyś okaże się że Room też ma sens, dorzucimy
+    /// kolumnę ReverbPreset i zachowamy wsteczną kompatybilność (Hall
+    /// jako default).
+    /// </summary>
+    public float ReverbMix { get; set; } = 0.0f;
 }

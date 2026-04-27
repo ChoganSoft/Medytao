@@ -21,15 +21,6 @@ public enum MeditationStatus
     Archived = 3
 }
 
-// Preset reverbu nakładanego na całą warstwę. Off = brak efektu (graf
-// audio omija ConvolverNode), Room = krótkie, naturalne odbicia, Hall =
-// dłuższe, przestrzenne. Faktyczne IR (impulse response) generujemy
-// syntetycznie po stronie klienta — zob. wwwroot/js/audioPreview.js.
-// Liczba presetów świadomie mała: medytacja nie potrzebuje studyjnej
-// gradacji, a każdy dodatkowy preset = kolejny algorytmiczny IR.
-public enum LayerReverbPreset
-{
-    Off = 0,
-    Room = 1,
-    Hall = 2
-}
+// Reverb wcześniej był enumem per-warstwa (Off/Room/Hall); od refaktoru
+// "track-level reverb" mamy jeden zaszyty preset (Hall) i sterowanie wet/dry
+// per Track przez Track.ReverbMix. Enum zniknął, bo nie było już co przechowywać.

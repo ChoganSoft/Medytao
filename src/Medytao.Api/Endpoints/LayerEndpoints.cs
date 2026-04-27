@@ -13,8 +13,7 @@ public static class LayerEndpoints
 
         group.MapPut("/{layerId:guid}", async (Guid layerId, UpdateLayerRequest req, IMediator mediator) =>
         {
-            var result = await mediator.Send(new UpdateLayerCommand(
-                layerId, req.Volume, req.Muted, req.ReverbPreset, req.ReverbMix));
+            var result = await mediator.Send(new UpdateLayerCommand(layerId, req.Volume, req.Muted));
             return Results.Ok(result);
         });
 
@@ -27,7 +26,7 @@ public static class LayerEndpoints
                 req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
                 req.StartOffsetMs, req.CrossfadeMs,
-                req.PlaybackRate));
+                req.PlaybackRate, req.ReverbMix));
             return Results.Created($"/api/v1/layers/{layerId}/tracks/{result.Id}", result);
         });
 
@@ -37,7 +36,7 @@ public static class LayerEndpoints
                 trackId, req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
                 req.StartOffsetMs, req.CrossfadeMs,
-                req.PlaybackRate));
+                req.PlaybackRate, req.ReverbMix));
             return Results.Ok(result);
         });
 
@@ -55,12 +54,7 @@ public static class LayerEndpoints
     }
 }
 
-// ReverbPreset/ReverbMix opcjonalne w request-cie — domyślne wartości
-// = "Off"/0 zachowują wsteczną kompatybilność, jeśli stary klient nie
-// wyśle tych pól. Nowy klient zawsze dośle aktualne wartości warstwy.
-public record UpdateLayerRequest(
-    float Volume, bool Muted,
-    string ReverbPreset = "Off", float ReverbMix = 0f);
+public record UpdateLayerRequest(float Volume, bool Muted);
 public record AddTrackRequest(
     Guid AssetId,
     float Volume = 1f,
@@ -69,7 +63,8 @@ public record AddTrackRequest(
     int FadeOutMs = 0,
     int StartOffsetMs = 0,
     int CrossfadeMs = 0,
-    float PlaybackRate = 1f);
+    float PlaybackRate = 1f,
+    float ReverbMix = 0f);
 public record UpdateTrackRequest(
     float Volume,
     int LoopCount,
@@ -77,5 +72,6 @@ public record UpdateTrackRequest(
     int FadeOutMs,
     int StartOffsetMs,
     int CrossfadeMs,
-    float PlaybackRate);
+    float PlaybackRate,
+    float ReverbMix);
 public record ReorderTracksRequest(IEnumerable<Guid> OrderedTrackIds);

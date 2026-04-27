@@ -99,6 +99,22 @@
                     }
                 </div>
             }
+
+            @* Slider reverbu — zawsze widoczny dla każdego tracka (Hall jest
+               jedynym presetem). Zakres 0..1 z krokiem 0.01 dla precyzji.
+               0% = pełne dry (graf bypassuje convolver), 100% = pełen wet. *@
+            <div class="detail-row reverb-row">
+                <span class="detail-label">Reverb (Hall)</span>
+                <input type="range" min="0" max="1" step="0.01"
+                       value="@_reverbMix.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => OnReverbMixInput(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                       @onchange="e => OnReverbMixChange(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                       class="medytao-slider reverb-slider"
+                       style="--slider-fill: @((int)(_reverbMix * 100))%"
+                       title="Reverb wet/dry mix (0% = no effect)" />
+                <span class="reverb-mix-value">@((int)(_reverbMix * 100))%</span>
+            </div>
+
             <div class="detail-actions">
                 <button class="btn-save" @onclick="SaveDetail">Save changes</button>
             </div>
@@ -133,17 +149,19 @@
     private int _loopCount;
     private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
     private float _playbackRate;
+    private float _reverbMix;
 
     // Shadow-y per-pole — kopiujemy Track.X do _x tylko gdy parametr zmienił
     // się z zewnątrz. Bez tego progress-timer sesji playbacku (tick co 250ms)
-    // resetowałby suwaki Volume / Speed do starej wartości w środku drag-u,
-    // bo parent dostaje świeży DTO dopiero po release (persist + refetch).
+    // resetowałby suwaki Volume / Speed / Reverb do starej wartości w środku
+    // drag-u, bo parent dostaje świeży DTO dopiero po release (persist + refetch).
     // NaN/min-int = sentinel "jeszcze nie widziane" → pierwszy render zawsze inicjalizuje.
     private float _shadowVolume = float.NaN;
     private int _shadowLoopCount = int.MinValue;
     private int _shadowFadeIn = int.MinValue, _shadowFadeOut = int.MinValue;
     private int _shadowStartOffset = int.MinValue, _shadowCrossfade = int.MinValue;
     private float _shadowPlaybackRate = float.NaN;
+    private float _shadowReverbMix = float.NaN;
 
     protected override void OnParametersSet()
     {
@@ -181,6 +199,11 @@
         {
             _shadowPlaybackRate = Track.PlaybackRate;
             _playbackRate = Track.PlaybackRate;
+        }
+        if (!FloatEquals(_shadowReverbMix, Track.ReverbMix))
+        {
+            _shadowReverbMix = Track.ReverbMix;
+            _reverbMix = Track.ReverbMix;
         }
     }
 
@@ -256,9 +279,25 @@
         return (int)Math.Round((clamped - min) / (max - min) * 100);
     }
 
+    // Reverb mix — drag = live update silnika audio (zmiana wet/dry gain
+    // słyszalna od razu, bez glitchu), release = persist.
+    private async Task OnReverbMixInput(float v)
+    {
+        _reverbMix = v;
+        await PlaybackSession.SetTrackReverbMixAsync(LayerId, Track.Id, v);
+    }
+
+    private async Task OnReverbMixChange(float v)
+    {
+        _reverbMix = v;
+        await PlaybackSession.SetTrackReverbMixAsync(LayerId, Track.Id, v);
+        await PersistAsync();
+        await OnChanged.InvokeAsync();
+    }
+
     private Task PersistAsync() =>
         MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loopCount,
-            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs, _playbackRate);
+            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs, _playbackRate, _reverbMix);
 
     private async Task Remove()
     {
@@ -366,6 +405,17 @@
         line-height: 1.4;
     }
     .speed-reset:hover { color: var(--color-text-primary); border-color: var(--color-border-primary); }
+
+    /* Slider reverbu — analogicznie do speed-row, pełna szerokość detail-row,
+       slider 220px + wartość 56px (tabular-nums = nie skacze przy zmianie 9→10%). */
+    .detail-row.reverb-row { flex: 1 1 100%; gap: 10px; }
+    .reverb-slider { flex: 0 0 220px; }
+    .reverb-mix-value {
+        font-size: 13px;
+        color: var(--color-text-primary);
+        min-width: 56px;
+        font-variant-numeric: tabular-nums;
+    }
 
     .detail-actions { width: 100%; margin-top: 4px; }
     .btn-save {

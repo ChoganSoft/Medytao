@@ -1,16 +1,14 @@
 using MediatR;
 using Medytao.Domain.Entities;
-using Medytao.Domain.Enums;
 using Medytao.Domain.Interfaces;
 using Medytao.Shared.Models;
 
 namespace Medytao.Application.Layers.Commands;
 
-// ── Update layer master volume / mute / reverb ────────────────────────────────
-public record UpdateLayerCommand(
-    Guid LayerId, float Volume, bool Muted,
-    string ReverbPreset, float ReverbMix
-) : IRequest<LayerDto>;
+// ── Update layer master volume / mute ─────────────────────────────────────────
+// Reverb przeniesiony na Track po refaktorze "track-level reverb" — Layer
+// ma tylko volume + mute. Stary kontrakt z Preset/Mix zniknął.
+public record UpdateLayerCommand(Guid LayerId, float Volume, bool Muted) : IRequest<LayerDto>;
 
 public class UpdateLayerHandler(ILayerRepository repo, IUnitOfWork uow, IStorageService storage)
     : IRequestHandler<UpdateLayerCommand, LayerDto>
@@ -22,14 +20,6 @@ public class UpdateLayerHandler(ILayerRepository repo, IUnitOfWork uow, IStorage
 
         layer.Volume = cmd.Volume;
         layer.Muted = cmd.Muted;
-        // Preset: jeśli klient wyśle nieznaną wartość — zostawiamy obecny preset
-        // (defensywnie, nie psujemy stanu). UI nie ma jak wysłać nieznanej
-        // wartości, ale request mógłby przyjść spreparowany.
-        if (Enum.TryParse<LayerReverbPreset>(cmd.ReverbPreset, ignoreCase: true, out var preset))
-            layer.ReverbPreset = preset;
-        // Mix klamrowany 0..1 — UI trzyma slider w tym zakresie, ale
-        // chronimy się przed manualnym requestem.
-        layer.ReverbMix = Math.Clamp(cmd.ReverbMix, 0f, 1f);
         layer.UpdatedAt = DateTimeOffset.UtcNow;
 
         await repo.UpdateAsync(layer, ct);
@@ -44,7 +34,7 @@ public record AddTrackCommand(
     float Volume = 1f, int LoopCount = 1,
     int FadeInMs = 0, int FadeOutMs = 0,
     int StartOffsetMs = 0, int CrossfadeMs = 0,
-    float PlaybackRate = 1f
+    float PlaybackRate = 1f, float ReverbMix = 0f
 ) : IRequest<TrackDto>;
 
 public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackRepo, IAssetRepository assetRepo, IUnitOfWork uow, IStorageService storage)
@@ -79,6 +69,7 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
             StartOffsetMs = cmd.StartOffsetMs,
             CrossfadeMs = cmd.CrossfadeMs,
             PlaybackRate = cmd.PlaybackRate,
+            ReverbMix = Math.Clamp(cmd.ReverbMix, 0f, 1f),
             Asset = asset
         };
 
@@ -92,7 +83,7 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
 public record UpdateTrackCommand(
     Guid TrackId, float Volume, int LoopCount,
     int FadeInMs, int FadeOutMs, int StartOffsetMs, int CrossfadeMs,
-    float PlaybackRate
+    float PlaybackRate, float ReverbMix
 ) : IRequest<TrackDto>;
 
 public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorageService storage)
@@ -113,6 +104,7 @@ public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorage
         // chronimy się przed manualnie spreparowanym requestem. Skrajne
         // wartości i tak są klamrowane do tego okna.
         track.PlaybackRate = Math.Clamp(cmd.PlaybackRate, 0.5f, 2.0f);
+        track.ReverbMix = Math.Clamp(cmd.ReverbMix, 0f, 1f);
         track.UpdatedAt = DateTimeOffset.UtcNow;
 
         await repo.UpdateAsync(track, ct);
@@ -152,13 +144,12 @@ internal static class LayerMappings
 {
     public static LayerDto ToDto(this Domain.Entities.Layer l, IStorageService storage) => new(
         l.Id, l.Type.ToString(), l.Volume, l.Muted,
-        l.ReverbPreset.ToString(), l.ReverbMix,
         l.Tracks.OrderBy(t => t.Order).Select(t => t.ToDto(storage)));
 
     public static TrackDto ToDto(this Track t, IStorageService storage) => new(
         t.Id, t.Order, t.Volume, t.LoopCount,
         t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,
-        t.PlaybackRate,
+        t.PlaybackRate, t.ReverbMix,
         // Tu DTO trafia w karty tracków w edytorze — toggle/kosz nie są
         // pokazywane, więc IsMine ustawiamy zachowawczo na false. IsShared
         // odzwierciedla rzeczywisty stan, na wypadek gdyby UI miał kiedyś
