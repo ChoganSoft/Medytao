@@ -68,7 +68,7 @@
                 <TrackCard
                     Track="track"
                     LayerId="Layer.Id"
-                    LayerType="Layer.Type"
+                    LayerType="@Layer.Type"
                     BlocksSequence="blocks"
                     IsCurrent="@(progress is not null && !progress.Finished && progress.TrackIndex == i)"
                     OnChanged="OnLayerChanged"
