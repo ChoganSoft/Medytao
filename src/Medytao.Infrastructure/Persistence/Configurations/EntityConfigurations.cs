@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Medytao.Domain.Entities;
+using Medytao.Domain.Enums;
 
 namespace Medytao.Infrastructure.Persistence.Configurations;
 
@@ -178,10 +179,22 @@ public class AssetConfiguration : IEntityTypeConfiguration<Asset>
         b.Property(a => a.FileName).IsRequired().HasMaxLength(500);
         b.Property(a => a.BlobKey).IsRequired().HasMaxLength(1000);
         b.Property(a => a.ContentType).IsRequired().HasMaxLength(100);
-        b.Property(a => a.Type).HasConversion<string>();
         b.Property(a => a.Tags).HasMaxLength(500);
 
-        b.HasIndex(a => a.OwnerId);
-        b.HasIndex(a => a.Type);
+        // TPH: jedna tabela Assets, kolumna LayerType pełni rolę dyskryminatora.
+        // Wartość trzymana jako string (czytelnie w SQL i odporne na renumerację
+        // enuma) — analogicznie do innych enumów w schemie.
+        b.Property(a => a.LayerType).HasConversion<string>().HasMaxLength(20);
+        b.HasDiscriminator(a => a.LayerType)
+            .HasValue<MusicAsset>(LayerType.Music)
+            .HasValue<NatureAsset>(LayerType.Nature)
+            .HasValue<TextAsset>(LayerType.Text)
+            .HasValue<FxAsset>(LayerType.Fx);
+
+        // OwnerId nullable: NULL = zasób globalny (widoczny dla wszystkich),
+        // non-null = prywatny zasób tego usera. Composite index pod typowy
+        // pattern listingu: "daj mi zasoby warstwy X widoczne dla usera Y"
+        // (czyli WHERE LayerType = ? AND (OwnerId IS NULL OR OwnerId = ?)).
+        b.HasIndex(a => new { a.LayerType, a.OwnerId });
     }
 }

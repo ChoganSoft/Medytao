@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Medytao.Domain.Entities;
+using Medytao.Domain.Enums;
 using Medytao.Domain.Interfaces;
 
 namespace Medytao.Infrastructure.Persistence;
@@ -112,9 +113,13 @@ public class AssetRepository(AppDbContext db) : IAssetRepository
     public Task<Asset?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
 
-    public async Task<IEnumerable<Asset>> GetByOwnerAsync(Guid ownerId, CancellationToken ct = default) =>
+    public async Task<IEnumerable<Asset>> GetVisibleForUserAsync(Guid userId, LayerType layerType, CancellationToken ct = default) =>
+        // Globalne (OwnerId IS NULL) + prywatne danego usera. Filtr po LayerType
+        // realnie schodzi do warunku na kolumnie dyskryminatora w SQL — EF
+        // wybiera odpowiednią podklasę (MusicAsset/NatureAsset/...) automatycznie.
         await db.Assets
-            .Where(a => a.OwnerId == ownerId)
+            .Where(a => a.LayerType == layerType
+                     && (a.OwnerId == null || a.OwnerId == userId))
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(ct);
 

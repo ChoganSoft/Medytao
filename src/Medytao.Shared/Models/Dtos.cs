@@ -1,13 +1,21 @@
 namespace Medytao.Shared.Models;
 
 // ── Asset ──────────────────────────────────────────────
+// LayerType: nazwa warstwy do której zasób należy ("Music"/"Nature"/"Text"/"Fx").
+// Wynika z konkretnej podklasy w domenie (TPH) i jednocześnie steruje filtrowaniem
+// w UI — picker w warstwie X pokazuje tylko zasoby z LayerType == X.
+//
+// IsGlobal: true, gdy zasób jest widoczny dla wszystkich userów (OwnerId == null
+// w bazie). Frontend używa do np. wyszarzenia przycisku "Delete" — globalnych
+// nie usuwa zwykły user.
 public record AssetDto(
     Guid Id,
     string FileName,
     string ContentType,
     long SizeBytes,
     int? DurationMs,
-    string Type,
+    string LayerType,
+    bool IsGlobal,
     string? Tags,
     string Url
 );

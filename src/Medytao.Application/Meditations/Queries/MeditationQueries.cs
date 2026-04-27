@@ -24,7 +24,9 @@ public class GetMeditationByIdHandler(IMeditationRepository repo, IStorageServic
                     new AssetDto(
                         t.Asset.Id, t.Asset.FileName, t.Asset.ContentType,
                         t.Asset.SizeBytes, t.Asset.DurationMs,
-                        t.Asset.Type.ToString(), t.Asset.Tags,
+                        t.Asset.LayerType.ToString(),
+                        t.Asset.OwnerId is null,
+                        t.Asset.Tags,
                         storage.GetPublicUrl(t.Asset.BlobKey)
                     )
                 ))

@@ -159,14 +159,16 @@ public class CategoryService(HttpClient http)
 
 public class AssetService(HttpClient http)
 {
-    public Task<List<AssetDto>?> GetAllAsync() =>
-        http.GetFromJsonAsync<List<AssetDto>>("/api/v1/assets");
+    // GET /assets?layerType=... — zawsze w kontekście jednej warstwy.
+    // Backend zwraca własne zasoby usera + globalne (OwnerId IS NULL).
+    public Task<List<AssetDto>?> GetByLayerAsync(string layerType) =>
+        http.GetFromJsonAsync<List<AssetDto>>($"/api/v1/assets?layerType={Uri.EscapeDataString(layerType)}");
 
-    public async Task<AssetDto?> UploadAsync(Stream stream, string fileName, string contentType, string type, int? durationMs = null)
+    public async Task<AssetDto?> UploadAsync(Stream stream, string fileName, string contentType, string layerType, int? durationMs = null)
     {
         using var content = new MultipartFormDataContent();
         content.Add(new StreamContent(stream), "file", fileName);
-        content.Add(new StringContent(type), "type");
+        content.Add(new StringContent(layerType), "layerType");
         if (durationMs.HasValue) content.Add(new StringContent(durationMs.Value.ToString()), "durationMs");
         var response = await http.PostAsync("/api/v1/assets/upload", content);
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AssetDto>() : null;

@@ -1,4 +1,5 @@
 using Medytao.Domain.Entities;
+using Medytao.Domain.Enums;
 
 namespace Medytao.Domain.Interfaces;
 
@@ -55,7 +56,14 @@ public interface ITrackRepository
 public interface IAssetRepository
 {
     Task<Asset?> GetByIdAsync(Guid id, CancellationToken ct = default);
-    Task<IEnumerable<Asset>> GetByOwnerAsync(Guid ownerId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Zwraca zasoby widoczne dla danego usera w zadanej warstwie:
+    /// własne (OwnerId = userId) plus globalne (OwnerId IS NULL). To jest
+    /// główny entry point listingu w UI — picker, panel zarządzania assetami.
+    /// </summary>
+    Task<IEnumerable<Asset>> GetVisibleForUserAsync(Guid userId, LayerType layerType, CancellationToken ct = default);
+
     Task AddAsync(Asset asset, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);
 }
