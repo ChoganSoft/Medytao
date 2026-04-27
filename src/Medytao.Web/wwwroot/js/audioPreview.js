@@ -3,18 +3,161 @@
 //   window.medytaoAudio  — proste helpery nad pojedynczym <audio> (preview button).
 //   window.medytaoPlayer — odtwarzacz sesji: wiele warstw grających równolegle,
 //                          każda warstwa to sekwencja tracków (LoopCount).
+// Oba systemy współdzielą jeden AudioContext i jeden Hall IR-buffer
+// (zob. _sharedCtx / _sharedHallIR poniżej).
+
+// ── Współdzielone helpery audio (nad-namespace) ───────────────────────────────
+// Globalny singleton AudioContext. Chrome wymaga user gesture na pierwszy
+// resume(), więc tworzymy lazy przy pierwszym żądaniu (po kliknięciu Play
+// albo Preview). Sentinel `false` = "próba się nie udała", nie spamujemy logiem.
+let _sharedCtx = null;
+
+function getSharedAudioCtx() {
+    if (_sharedCtx === null) {
+        try {
+            const Ctor = window.AudioContext || window.webkitAudioContext;
+            _sharedCtx = new Ctor();
+        } catch (e) {
+            console.warn('[medytao audio] AudioContext unavailable', e);
+            _sharedCtx = false;
+        }
+    }
+    if (_sharedCtx && _sharedCtx.state === 'suspended') {
+        _sharedCtx.resume().catch(() => { /* idempotent */ });
+    }
+    return _sharedCtx || null;
+}
+
+// Hall IR — generowany raz, współdzielony między medytaoPlayer (graph
+// sesji) a medytaoAudio (graph preview-a). Decay 2.2s, lekki LP-smoothing,
+// stereo decorrelated. Power(2.5) envelope = naturalne gasnięcie bez
+// długich szumiących "ogonów".
+let _sharedHallIR = null;
+
+function getSharedHallIR(ctx) {
+    if (_sharedHallIR) return _sharedHallIR;
+    const decaySec = 2.2;
+    const smoothFactor = 0.35;
+    const gain = 0.7;
+    const sr = ctx.sampleRate;
+    const length = Math.max(1, Math.floor(decaySec * sr));
+    const ir = ctx.createBuffer(2, length, sr);
+    for (let ch = 0; ch < 2; ch++) {
+        const data = ir.getChannelData(ch);
+        let prev = 0;
+        for (let i = 0; i < length; i++) {
+            const t = i / length;
+            const env = Math.pow(1 - t, 2.5);
+            const noise = (Math.random() * 2 - 1) * env * gain;
+            const out = prev * (1 - smoothFactor) + noise * smoothFactor;
+            data[i] = out;
+            prev = out;
+        }
+    }
+    _sharedHallIR = ir;
+    return ir;
+}
+
+// preservesPitch: spec-y wszystkich obecnych przeglądarek (Chrome/Edge/Firefox/Safari)
+// już dawno wspierają standardową nazwę. Stary `mozPreservesPitch`/`webkitPreservesPitch`
+// ustawiamy z czysto defensywnych powodów — koszt zerowy, a chroni przed dziwnymi WebView.
+function applyRateToEl(audioEl, rate) {
+    const r = (typeof rate === 'number' && isFinite(rate) && rate > 0)
+        ? Math.max(0.5, Math.min(2.0, rate))
+        : 1.0;
+    try { audioEl.preservesPitch = true; } catch { }
+    try { audioEl.mozPreservesPitch = true; } catch { }
+    try { audioEl.webkitPreservesPitch = true; } catch { }
+    try { audioEl.playbackRate = r; } catch (e) {
+        console.warn('medytao audio: playbackRate set failed', e);
+    }
+}
+
+function clamp01_shared(v) {
+    if (typeof v !== 'number' || !isFinite(v)) return 0;
+    return Math.max(0, Math.min(1, v));
+}
+
+// ── medytaoAudio: graf reverbu dla preview-a ──────────────────────────────────
+// WeakMap audioEl → { src, dryGain, wetGain, convolver, wetConnected }.
+// WeakMap = automatic cleanup gdy element zniknie z DOM-u (Blazor disposuje
+// AudioPreviewButton). createMediaElementSource można utworzyć tylko RAZ
+// na element, więc graph cache'ujemy i reusujemy między klikami Play.
+const _previewGraphs = new WeakMap();
+
+function ensurePreviewGraph(audioEl) {
+    if (!audioEl) return null;
+    let g = _previewGraphs.get(audioEl);
+    if (g) return g;
+    const ctx = getSharedAudioCtx();
+    if (!ctx) return null;
+    try {
+        const src = ctx.createMediaElementSource(audioEl);
+        const dryGain = ctx.createGain();
+        const wetGain = ctx.createGain();
+        // Start: 100% dry, 0% wet — preview bez reverbu zachowuje się tak
+        // samo jak przed dodaniem grafu (audio.volume nadal działa pre-graph).
+        dryGain.gain.value = 1;
+        wetGain.gain.value = 0;
+        src.connect(dryGain);
+        dryGain.connect(ctx.destination);
+        // Wet path zostaje niepodłączony do convolvera dopóki mix nie urośnie >0
+        // — żaden FFT cost dla preview-ów dry tracków.
+        g = { src, dryGain, wetGain, convolver: null, wetConnected: false };
+        _previewGraphs.set(audioEl, g);
+        return g;
+    } catch (e) {
+        // createMediaElementSource rzuca, jeśli element już został wpięty —
+        // teoretycznie WeakMap to wyłapie, ale defensywnie cache'ujemy null.
+        console.warn('medytao audio: ensurePreviewGraph failed', e);
+        return null;
+    }
+}
+
+function applyPreviewReverb(audioEl, mix) {
+    const m = clamp01_shared(mix);
+    // Lazy: jeśli mix=0 i graf nie istnieje, nie tworzymy go w ogóle —
+    // preview bez reverbu ma zerowy narzut Web Audio.
+    if (m === 0 && !_previewGraphs.has(audioEl)) return;
+    const g = ensurePreviewGraph(audioEl);
+    if (!g) return;
+    g.dryGain.gain.value = 1 - m;
+    g.wetGain.gain.value = m;
+    if (m > 0 && !g.wetConnected) {
+        try {
+            const ctx = getSharedAudioCtx();
+            if (!ctx) return;
+            // Convolver tworzymy lazy per element (a nie współdzielony między
+            // wielu elementami), bo przy wielu jednoczesnych preview-ach
+            // każdy musi mieć osobne wejście. WeakMap-cache automatycznie
+            // posprząta, gdy element wyleci z DOM-u.
+            if (!g.convolver) {
+                g.convolver = ctx.createConvolver();
+                g.convolver.buffer = getSharedHallIR(ctx);
+                g.convolver.connect(ctx.destination);
+            }
+            g.src.connect(g.wetGain);
+            g.wetGain.connect(g.convolver);
+            g.wetConnected = true;
+        } catch (e) {
+            console.warn('medytao audio: late wet connect failed', e);
+        }
+    }
+}
 
 // ── medytaoAudio ──────────────────────────────────────────────────────────────
 window.medytaoAudio = {
-    // play(audioEl, volume, rate?) — rate opcjonalny (kompatybilność wstecz).
-    // Jeśli podany, ustawiamy preservesPitch + playbackRate przed play(),
-    // żeby pierwszy sample już leciał w docelowym tempie.
-    play(audioEl, volume, rate) {
+    // play(audioEl, volume, rate?, reverbMix?) — rate i reverbMix opcjonalne.
+    // Reverb wymaga AudioContextu, więc gdy mix > 0 budujemy graf preview-a
+    // (raz na element, cache w _previewGraphs). audio.volume nadal działa
+    // pre-graph, więc istniejąca logika volumu zostaje bez zmian.
+    play(audioEl, volume, rate, reverbMix) {
         if (!audioEl) return;
         if (typeof volume === 'number') {
             audioEl.volume = Math.max(0, Math.min(1, volume));
         }
         applyRateToEl(audioEl, rate);
+        applyPreviewReverb(audioEl, reverbMix);
         audioEl.currentTime = 0;
         audioEl.play().catch(err => console.warn('Audio play failed:', err));
     },
@@ -45,6 +188,14 @@ window.medytaoAudio = {
         applyRateToEl(audioEl, rate);
     },
 
+    // Live-update wet/dry mixu reverbu preview-a. Wołane z AudioPreviewButton
+    // podczas drag-u suwaka Reverb w TrackCard — analogicznie do setRate.
+    // 0 = bypass (gdy graf jeszcze nie istnieje, w ogóle go nie tworzymy).
+    setReverbMix(audioEl, mix) {
+        if (!audioEl) return;
+        applyPreviewReverb(audioEl, mix);
+    },
+
     pauseAll() {
         document.querySelectorAll('audio').forEach(a => {
             try { a.pause(); } catch { }
@@ -60,21 +211,6 @@ window.medytaoAudio = {
         };
     }
 };
-
-// Helper współdzielony przez medytaoAudio i medytaoPlayer (ten drugi ma
-// własną wewnętrzną kopię applyRate w IIFE poniżej — duplikujemy świadomie,
-// żeby IIFE nie musiał sięgać do globala).
-function applyRateToEl(audioEl, rate) {
-    const r = (typeof rate === 'number' && isFinite(rate) && rate > 0)
-        ? Math.max(0.5, Math.min(2.0, rate))
-        : 1.0;
-    try { audioEl.preservesPitch = true; } catch { }
-    try { audioEl.mozPreservesPitch = true; } catch { }
-    try { audioEl.webkitPreservesPitch = true; } catch { }
-    try { audioEl.playbackRate = r; } catch (e) {
-        console.warn('medytaoAudio: playbackRate set failed', e);
-    }
-}
 
 // Alias dla kompatybilności wstecz.
 window.meditationPlayer = window.medytaoAudio;
@@ -118,53 +254,10 @@ window.meditationPlayer = window.medytaoAudio;
     }
 
     // ── AudioContext + reverb ─────────────────────────────────────────────────
-    // Globalny singleton — Chrome wymaga user gesture na pierwszy resume(),
-    // więc tworzymy lazy w startSession (po kliknięciu Play). Sentinel `false`
-    // znaczy "próbowaliśmy i się nie udało" — nie spamujemy logiem.
-    let _audioCtx = null;
-
-    function getAudioCtx() {
-        if (_audioCtx === null) {
-            try {
-                const Ctor = window.AudioContext || window.webkitAudioContext;
-                _audioCtx = new Ctor();
-            } catch (e) {
-                console.warn('[medytaoPlayer] AudioContext unavailable', e);
-                _audioCtx = false;
-            }
-        }
-        return _audioCtx || null;
-    }
-
-    // Hall IR — pojedynczy preset, generowany lazy raz na sesję AudioContext.
-    // Decay 2.2s, lekki LP-smoothing, stereo z osobnymi seedami szumu dla
-    // naturalnej szerokości stereo. Power(2.5) envelope = naturalniejsze
-    // gasnięcie niż eksp, brak długich szumiących "ogonów".
-    let _hallIR = null;
-
-    function getHallIR(ctx) {
-        if (_hallIR) return _hallIR;
-        const decaySec = 2.2;
-        const smoothFactor = 0.35;
-        const gain = 0.7;
-        const sr = ctx.sampleRate;
-        const length = Math.max(1, Math.floor(decaySec * sr));
-        const ir = ctx.createBuffer(2, length, sr);
-        for (let ch = 0; ch < 2; ch++) {
-            const data = ir.getChannelData(ch);
-            let prev = 0;
-            for (let i = 0; i < length; i++) {
-                const t = i / length;
-                const env = Math.pow(1 - t, 2.5);
-                const noise = (Math.random() * 2 - 1) * env * gain;
-                const out = prev * (1 - smoothFactor) + noise * smoothFactor;
-                data[i] = out;
-                prev = out;
-            }
-        }
-        _hallIR = ir;
-        return ir;
-    }
+    // AudioContext i Hall IR pochodzą z modułu (zob. getSharedAudioCtx /
+    // getSharedHallIR na początku pliku). Aliasy lokalne dla czytelności.
+    const getAudioCtx = getSharedAudioCtx;
+    const getHallIR = getSharedHallIR;
 
     // Lazy convolver per-warstwa. Tworzymy gdy pierwszy track w warstwie ma
     // mix > 0. Wszystkie wet path-e tracków w warstwie spotykają się tutaj
