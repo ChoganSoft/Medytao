@@ -30,6 +30,10 @@ public record AssetDto(
 // na lektorze). Field jednak jest per-Track, bo różne fragmenty narracji
 // mogą wymagać różnego tempa. Default 1.0 zachowuje semantykę dla starych
 // medytacji bez tej wartości.
+//
+// ReverbMix: 0..1 wet/dry pojedynczego sounda. 0 = bypass (graf nie wpina
+// convolvera). Jeden zaszyty preset (Hall) — UI to slider 0–100% zawsze
+// widoczny w expanded panelu tracka, niezależnie od warstwy.
 public record TrackDto(
     Guid Id,
     int Order,
@@ -40,24 +44,19 @@ public record TrackDto(
     int StartOffsetMs,
     int CrossfadeMs,
     float PlaybackRate,
+    float ReverbMix,
     AssetDto Asset
 );
 
 // ── Layer ──────────────────────────────────────────────
-// ReverbPreset: nazwa presetu jako string ("Off"/"Room"/"Hall") — UI mapuje
-// stringa na opcje dropdown-u, JS używa go jako klucza do generowanego IR.
-// String zamiast int dla czytelności w devtools / payloadzie API.
-//
-// ReverbMix: 0..1 wet/dry. UI renderuje slider tylko gdy preset != "Off".
-// Wartość zachowywana niezależnie od presetu, żeby toggle Off↔Room nie
-// gubił wybranego mixu.
+// Reverb wcześniej był per-Layer (Preset + Mix); refaktor "track-level reverb"
+// przeniósł go na TrackDto.ReverbMix z jednym zaszytym presetem (Hall). LayerDto
+// zostaje proste: tylko volume + mute + tracks.
 public record LayerDto(
     Guid Id,
     string Type,
     float Volume,
     bool Muted,
-    string ReverbPreset,
-    float ReverbMix,
     IEnumerable<TrackDto> Tracks
 );
 

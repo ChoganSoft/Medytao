@@ -139,12 +139,6 @@ public class LayerConfiguration : IEntityTypeConfiguration<Layer>
         b.Property(l => l.Type).HasConversion<string>();
         b.Property(l => l.Volume).HasDefaultValue(1.0f);
 
-        // Reverb: Preset jako string (czytelne SQL, odporne na renumerację
-        // enuma), Mix jako float z defaultem 0.0 = stare wiersze nie
-        // dostają nagle reverbu po dodaniu kolumny.
-        b.Property(l => l.ReverbPreset).HasConversion<string>().HasMaxLength(20).HasDefaultValue(LayerReverbPreset.Off);
-        b.Property(l => l.ReverbMix).HasDefaultValue(0.0f);
-
         b.HasMany(l => l.Tracks)
             .WithOne(t => t.Layer)
             .HasForeignKey(t => t.LayerId)
@@ -170,6 +164,9 @@ public class TrackConfiguration : IEntityTypeConfiguration<Track>
         // 1.0 zachowuje semantykę "graj normalnie", więc istniejące tracki nie
         // zmieniają zachowania po dodaniu kolumny.
         b.Property(t => t.PlaybackRate).HasDefaultValue(1.0f);
+        // ReverbMix: 0 = brak efektu (graf audio bypass'uje convolver), więc
+        // stare tracki bez tej kolumny brzmią identycznie jak przed dodaniem.
+        b.Property(t => t.ReverbMix).HasDefaultValue(0.0f);
 
         b.HasOne(t => t.Asset)
             .WithMany(a => a.Tracks)

@@ -82,11 +82,9 @@ public class MeditationService(HttpClient http)
     public Task<HttpResponseMessage> DeleteAsync(Guid id) =>
         http.DeleteAsync($"/api/v1/meditations/{id}");
 
-    public async Task<LayerDto?> UpdateLayerAsync(Guid layerId, float volume, bool muted,
-        string reverbPreset = "Off", float reverbMix = 0f)
+    public async Task<LayerDto?> UpdateLayerAsync(Guid layerId, float volume, bool muted)
     {
-        var response = await http.PutAsJsonAsync($"/api/v1/layers/{layerId}",
-            new { volume, muted, reverbPreset, reverbMix });
+        var response = await http.PutAsJsonAsync($"/api/v1/layers/{layerId}", new { volume, muted });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<LayerDto>() : null;
     }
 
@@ -98,10 +96,10 @@ public class MeditationService(HttpClient http)
 
     public async Task<TrackDto?> UpdateTrackAsync(Guid trackId, Guid layerId,
         float volume, int loopCount, int fadeInMs, int fadeOutMs, int startOffsetMs, int crossfadeMs,
-        float playbackRate)
+        float playbackRate, float reverbMix)
     {
         var response = await http.PutAsJsonAsync($"/api/v1/layers/{layerId}/tracks/{trackId}",
-            new { volume, loopCount, fadeInMs, fadeOutMs, startOffsetMs, crossfadeMs, playbackRate });
+            new { volume, loopCount, fadeInMs, fadeOutMs, startOffsetMs, crossfadeMs, playbackRate, reverbMix });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<TrackDto>() : null;
     }
 
