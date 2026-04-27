@@ -40,6 +40,16 @@
     /// </summary>
     [Parameter] public float Volume { get; set; } = 1.0f;
 
+    /// <summary>
+    /// Tempo odtwarzania preview (1.0 = normalne). Analogicznie do Volume —
+    /// rodzic (TrackCard warstwy Text) zmienia wartość podczas drag-u suwaka,
+    /// my puka my JS-owi by zaktualizował <audio>.playbackRate na żywo.
+    /// preservesPitch zachowuje wysokość tonu, więc spowolniony lektor
+    /// brzmi naturalnie. Default 1.0 = no-op dla wszystkich pozostałych
+    /// miejsc, gdzie używamy tego komponentu (assets, picker).
+    /// </summary>
+    [Parameter] public float PlaybackRate { get; set; } = 1.0f;
+
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
     private ElementReference _audioRef;
@@ -47,6 +57,7 @@
     private double _currentTime;
     private double _duration;
     private float _lastAppliedVolume = float.NaN;
+    private float _lastAppliedRate = float.NaN;
     private System.Timers.Timer? _progressTimer;
 
     // 0.0 .. 1.0 — ułamek odtworzony. Używane przez SVG ring do policzenia
@@ -97,8 +108,9 @@
         {
             // Zatrzymaj każde inne odtwarzanie na stronie.
             await JS.InvokeVoidAsync("medytaoAudio.pauseAll");
-            await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef, Volume);
+            await JS.InvokeVoidAsync("medytaoAudio.play", _audioRef, Volume, PlaybackRate);
             _lastAppliedVolume = Volume;
+            _lastAppliedRate = PlaybackRate;
             _playing = true;
             StartProgressTimer();
         }
@@ -114,6 +126,18 @@
             {
                 await JS.InvokeVoidAsync("medytaoAudio.setVolume", _audioRef, Volume);
                 _lastAppliedVolume = Volume;
+            }
+            catch { }
+        }
+
+        // Analogicznie do Volume — drag suwaka Speed w TrackCard zmienia
+        // PlaybackRate, a my live-update'ujemy <audio>.playbackRate.
+        if (_playing && Math.Abs(_lastAppliedRate - PlaybackRate) > 0.0001f)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("medytaoAudio.setRate", _audioRef, PlaybackRate);
+                _lastAppliedRate = PlaybackRate;
             }
             catch { }
         }
