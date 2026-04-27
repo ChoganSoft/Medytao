@@ -13,7 +13,8 @@ public static class LayerEndpoints
 
         group.MapPut("/{layerId:guid}", async (Guid layerId, UpdateLayerRequest req, IMediator mediator) =>
         {
-            var result = await mediator.Send(new UpdateLayerCommand(layerId, req.Volume, req.Muted));
+            var result = await mediator.Send(new UpdateLayerCommand(
+                layerId, req.Volume, req.Muted, req.ReverbPreset, req.ReverbMix));
             return Results.Ok(result);
         });
 
@@ -54,7 +55,12 @@ public static class LayerEndpoints
     }
 }
 
-public record UpdateLayerRequest(float Volume, bool Muted);
+// ReverbPreset/ReverbMix opcjonalne w request-cie — domyślne wartości
+// = "Off"/0 zachowują wsteczną kompatybilność, jeśli stary klient nie
+// wyśle tych pól. Nowy klient zawsze dośle aktualne wartości warstwy.
+public record UpdateLayerRequest(
+    float Volume, bool Muted,
+    string ReverbPreset = "Off", float ReverbMix = 0f);
 public record AddTrackRequest(
     Guid AssetId,
     float Volume = 1f,

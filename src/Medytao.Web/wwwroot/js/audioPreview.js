@@ -83,14 +83,21 @@ window.meditationPlayer = window.medytaoAudio;
 // Sesja playbacku. Każda warstwa gra sekwencyjnie, warstwy grają równolegle.
 //
 // startSession(layers) → sessionId
-//   layers: [{ id, volume, muted, tracks: [{ trackId, url, volume, loopCount, playbackRate }] }]
+//   layers: [{ id, volume, muted, reverbPreset, reverbMix,
+//              tracks: [{ trackId, url, volume, loopCount, playbackRate }] }]
 //   loopCount: 0 = loop forever (blocks next tracks), N = play N times.
 //   playbackRate: 1.0 = normalna prędkość. preservesPitch=true zachowuje wysokość
 //     tonu — slowdown brzmi naturalnie, bez "grunting" efektu.
+//   reverbPreset: "Off" / "Room" / "Hall" — gdy != "Off" oraz reverbMix > 0,
+//     warstwa rusza w grafie AudioContext z ConvolverNode-em (syntetyczne IR).
+//   reverbMix: 0..1 wet/dry. 0 = bypass nawet gdy preset != "Off".
 //
 // stopSession(sessionId) — zatrzymuje i zwalnia wszystkie <audio>.
 // setLayerVolume(sessionId, layerId, volume) — zmienia głośność warstwy w czasie rzeczywistym.
 // setLayerMuted(sessionId, layerId, muted) — wycisza / przywraca warstwę.
+// setLayerReverb(sessionId, layerId, preset, mix) — zmienia preset/mix reverbu.
+//   Pierwsze włączenie buduje graf AudioContext dla warstwy; kolejne tylko
+//   przełączają wet/dry gain i ewentualnie podmieniają IR.
 // setTrackVolume(sessionId, layerId, trackId, volume) — zmienia głośność tracka (stosuje się
 //   od razu, jeśli ten track jest akurat odtwarzany w swojej warstwie).
 // setTrackPlaybackRate(sessionId, layerId, trackId, rate) — zmienia tempo tracka. Jeśli track
@@ -103,7 +110,140 @@ window.meditationPlayer = window.medytaoAudio;
     function createAudio(url) {
         const a = new Audio(url);
         a.preload = 'auto';
+        // crossOrigin trzeba ustawić ZANIM Web Audio dotknie elementu —
+        // inaczej tainted-resource odcina output grafu (cisza) na zasobach
+        // serwowanych spoza origin (np. blob storage z innym hostem). 'anonymous'
+        // = bez credentiali, działa wszędzie gdzie odpowiada CORS-em.
+        a.crossOrigin = 'anonymous';
         return a;
+    }
+
+    // ── AudioContext + reverb ─────────────────────────────────────────────────
+    // Globalny singleton — Chrome wymaga user gesture na pierwszy resume(),
+    // więc tworzymy lazy w startSession (po kliknięciu Play). Sentinel `false`
+    // znaczy "próbowaliśmy i się nie udało" — nie spamujemy logiem.
+    let _audioCtx = null;
+
+    function getAudioCtx() {
+        if (_audioCtx === null) {
+            try {
+                const Ctor = window.AudioContext || window.webkitAudioContext;
+                _audioCtx = new Ctor();
+            } catch (e) {
+                console.warn('[medytaoPlayer] AudioContext unavailable', e);
+                _audioCtx = false;
+            }
+        }
+        return _audioCtx || null;
+    }
+
+    // IR-y per preset cache'owane między sesjami. AudioContext.sampleRate
+    // bywa różne (44.1k/48k), ale w obrębie jednej sesji jest stabilny —
+    // jeśli kiedyś będziemy mieli wiele context-ów, klucz trzeba rozszerzyć.
+    const _irCache = new Map();
+
+    function getOrCreateIR(presetName, ctx) {
+        if (_irCache.has(presetName)) return _irCache.get(presetName);
+        const buf = synthIR(presetName, ctx);
+        _irCache.set(presetName, buf);
+        return buf;
+    }
+
+    // Algorytmiczny impulse response — biały szum * exp envelope, lekki LP
+    // smoothing dla stłumienia syku. Stereo decorrelated (osobny noise per
+    // kanał) = naturalna szerokość. To nie jest fizyczna symulacja sali;
+    // wystarcza dla medytacji, gdzie chodzi o przestrzenność, nie realizm.
+    function synthIR(preset, ctx) {
+        let decaySec, smoothFactor, gain;
+        switch (preset) {
+            // smoothFactor: 0 = bardzo "drewniane" (mocne LP), 1 = brak filtra (ostre).
+            // Krótszy decay → mocniejszy attack (Room brzmi szybciej, Hall delikatniej).
+            case 'Room':
+                decaySec = 0.6; smoothFactor = 0.55; gain = 0.85; break;
+            case 'Hall':
+                decaySec = 2.2; smoothFactor = 0.35; gain = 0.7; break;
+            default:
+                decaySec = 0.6; smoothFactor = 0.55; gain = 0.85;
+        }
+        const sr = ctx.sampleRate;
+        const length = Math.max(1, Math.floor(decaySec * sr));
+        const ir = ctx.createBuffer(2, length, sr);
+        for (let ch = 0; ch < 2; ch++) {
+            const data = ir.getChannelData(ch);
+            let prev = 0;
+            for (let i = 0; i < length; i++) {
+                const t = i / length;
+                // power(2.5) zamiast eksp — fonetycznie naturalniejsze
+                // gasniecie, brak długich szumiących "ogonów".
+                const env = Math.pow(1 - t, 2.5);
+                const noise = (Math.random() * 2 - 1) * env * gain;
+                // 1-bieg LP: prev * (1-s) + sample * s. Wyższy s → bliżej oryginału.
+                const out = prev * (1 - smoothFactor) + noise * smoothFactor;
+                data[i] = out;
+                prev = out;
+            }
+        }
+        return ir;
+    }
+
+    // Tworzy graf reverbu warstwy: source(audio) → [dry, convolver→wet] → destination.
+    // MediaElementAudioSourceNode można utworzyć tylko RAZ na element, więc
+    // robimy to przy każdym nowym <audio> (bo każdy track = nowy element).
+    // Sam graf (dry/wet/convolver) tworzymy raz per warstwa i reusujemy.
+    function ensureLayerGraph(L) {
+        const ctx = getAudioCtx();
+        if (!ctx) return false;
+        if (L.graphReady) return true;
+
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => { /* idempotent */ });
+        }
+
+        L.dryGain = ctx.createGain();
+        L.wetGain = ctx.createGain();
+        L.convolver = ctx.createConvolver();
+        L.dryGain.connect(ctx.destination);
+        L.wetGain.connect(ctx.destination);
+        L.convolver.connect(L.wetGain);
+        L.audioSources = []; // referencje do MediaElementAudioSourceNode-ów
+
+        applyConvolverIR(L, ctx);
+        applyReverbGains(L);
+        L.graphReady = true;
+        return true;
+    }
+
+    function attachAudioToLayerGraph(L, audio) {
+        if (!L.graphReady) return;
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+            const src = ctx.createMediaElementSource(audio);
+            src.connect(L.dryGain);
+            src.connect(L.convolver);
+            L.audioSources.push(src);
+        } catch (e) {
+            // createMediaElementSource rzuca, jeśli element już został wpięty
+            // (nie powinno się zdarzyć, bo robimy świeży <audio> na każdy track).
+            console.warn('[medytaoPlayer] attach to graph failed', e);
+        }
+    }
+
+    function applyReverbGains(L) {
+        if (!L.dryGain || !L.wetGain) return;
+        const mix = clamp01(L.reverbMix);
+        const presetActive = L.reverbPreset && L.reverbPreset !== 'Off';
+        // mix=0 lub Off → 100% dry, 0% wet (efektywny bypass bez burzenia grafu).
+        const wet = presetActive ? mix : 0;
+        const dry = presetActive ? (1 - mix) : 1;
+        L.dryGain.gain.value = dry;
+        L.wetGain.gain.value = wet;
+    }
+
+    function applyConvolverIR(L, ctx) {
+        if (!L.convolver) return;
+        const preset = (L.reverbPreset && L.reverbPreset !== 'Off') ? L.reverbPreset : null;
+        L.convolver.buffer = preset ? getOrCreateIR(preset, ctx) : null;
     }
 
     function effectiveVolume(layerVolume, trackVolume, muted) {
@@ -123,6 +263,13 @@ window.meditationPlayer = window.medytaoAudio;
 
         audio.addEventListener('ended', () => onTrackEnded(state));
         state.audio = audio;
+
+        // Jeśli warstwa już ma utworzony graf reverbu, wpinamy nowo
+        // utworzony element. (audio.volume nadal działa pre-graph, więc
+        // logika volumu zostaje bez zmian.)
+        if (state.graphReady) {
+            attachAudioToLayerGraph(state, audio);
+        }
 
         audio.play().catch(err => console.warn('Medytao player: play failed', err));
     }
@@ -214,6 +361,12 @@ window.meditationPlayer = window.medytaoAudio;
                         layerId: l.id,
                         layerVolume: l.volume,
                         muted: !!l.muted,
+                        // Reverb state — graf utworzymy lazy, gdy faktycznie potrzebny.
+                        reverbPreset: l.reverbPreset || 'Off',
+                        reverbMix: clamp01(l.reverbMix),
+                        graphReady: false,
+                        dryGain: null, wetGain: null, convolver: null,
+                        audioSources: null,
                         tracks: l.tracks,
                         index: 0,
                         playsLeft,
@@ -228,9 +381,20 @@ window.meditationPlayer = window.medytaoAudio;
                     layerId: L.layerId,
                     layerVolume: L.layerVolume,
                     muted: L.muted,
+                    reverbPreset: L.reverbPreset,
+                    reverbMix: L.reverbMix,
                     tracks: L.tracks.map(t => ({ trackId: t.trackId, volume: t.volume, url: t.url }))
                 }))
             });
+
+            // Warstwy z aktywnym reverbem — tworzymy graf zanim odpalimy
+            // playCurrent (który wpina audio w graf). Bez tego pierwszy
+            // track byłby dry, a wet pojawiłby się dopiero przy następnym.
+            for (const state of layerStates) {
+                if (state.reverbPreset !== 'Off' && state.reverbMix > 0) {
+                    ensureLayerGraph(state);
+                }
+            }
 
             for (const state of layerStates) {
                 playCurrent(state);
@@ -338,6 +502,43 @@ window.meditationPlayer = window.medytaoAudio;
             if (isCurrent && L.audio) applyRate(L.audio, t.playbackRate);
             console.debug('[medytaoPlayer] setTrackPlaybackRate', {
                 layerId, trackId, rate: t.playbackRate, isCurrent
+            });
+        },
+
+        // Real-time reverb warstwy. Pierwsze włączenie (preset != Off, mix > 0)
+        // buduje graf AudioContext i wpina aktualny <audio> element. Kolejne
+        // wywołania tylko aktualizują wet/dry gain albo podmieniają IR.
+        // Nie odpinamy źródeł nawet po wyłączeniu (mix=0/preset=Off) —
+        // MediaElementAudioSource raz wpięty zostaje na zawsze; ustawiamy
+        // wet=0, dry=1 = efektywny bypass bez zauważalnej różnicy.
+        setLayerReverb(sessionId, layerId, preset, mix) {
+            const L = findLayer(sessionId, layerId);
+            if (!L) {
+                console.warn('[medytaoPlayer] setLayerReverb: layer not found', { sessionId, layerId });
+                return;
+            }
+            const newPreset = (preset || 'Off');
+            const newMix = clamp01(mix);
+            const wantsActive = newPreset !== 'Off' && newMix > 0;
+
+            L.reverbPreset = newPreset;
+            L.reverbMix = newMix;
+
+            if (wantsActive && !L.graphReady) {
+                const ok = ensureLayerGraph(L);
+                if (!ok) return;
+                // Wpinamy obecnie grający audio; kolejne tracki same się
+                // wpiną w playCurrent dzięki state.graphReady = true.
+                if (L.audio) attachAudioToLayerGraph(L, L.audio);
+            }
+
+            if (L.graphReady) {
+                applyConvolverIR(L, getAudioCtx());
+                applyReverbGains(L);
+            }
+
+            console.debug('[medytaoPlayer] setLayerReverb', {
+                layerId, preset: L.reverbPreset, mix: L.reverbMix, graphReady: L.graphReady
             });
         },
 

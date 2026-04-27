@@ -44,11 +44,20 @@ public record TrackDto(
 );
 
 // ── Layer ──────────────────────────────────────────────
+// ReverbPreset: nazwa presetu jako string ("Off"/"Room"/"Hall") — UI mapuje
+// stringa na opcje dropdown-u, JS używa go jako klucza do generowanego IR.
+// String zamiast int dla czytelności w devtools / payloadzie API.
+//
+// ReverbMix: 0..1 wet/dry. UI renderuje slider tylko gdy preset != "Off".
+// Wartość zachowywana niezależnie od presetu, żeby toggle Off↔Room nie
+// gubił wybranego mixu.
 public record LayerDto(
     Guid Id,
     string Type,
     float Volume,
     bool Muted,
+    string ReverbPreset,
+    float ReverbMix,
     IEnumerable<TrackDto> Tracks
 );
 

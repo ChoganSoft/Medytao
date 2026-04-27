@@ -18,6 +18,7 @@ public class GetMeditationByIdHandler(IMeditationRepository repo, IStorageServic
             m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
             m.Layers.OrderBy(l => l.Type).Select(l => new LayerDto(
                 l.Id, l.Type.ToString(), l.Volume, l.Muted,
+                l.ReverbPreset.ToString(), l.ReverbMix,
                 l.Tracks.OrderBy(t => t.Order).Select(t => new TrackDto(
                     t.Id, t.Order, t.Volume, t.LoopCount,
                     t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,

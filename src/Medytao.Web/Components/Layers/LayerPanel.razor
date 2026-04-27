@@ -47,6 +47,33 @@
         <button class="add-track-btn" @onclick="() => OnOpenAssetPicker.InvokeAsync()">+ Add track</button>
     </div>
 
+    @* Pasek reverbu — zawsze widoczny pod headerem warstwy. Trzy pill-buttony
+       presetu + slider wet/dry mixu (renderowany tylko gdy preset != Off,
+       żeby pasek nie był wizualnie głośny gdy efekt nieaktywny). *@
+    <div class="layer-reverb-bar">
+        <span class="reverb-label" title="Layer-wide reverb effect">Reverb</span>
+        <div class="reverb-presets" role="group" aria-label="Reverb preset">
+            @foreach (var preset in ReverbPresetOptions)
+            {
+                var active = string.Equals(_localPreset, preset, StringComparison.OrdinalIgnoreCase);
+                <button class="reverb-preset @(active ? "active" : "")"
+                        @onclick="() => SelectPreset(preset)"
+                        type="button">@preset</button>
+            }
+        </div>
+        @if (!string.Equals(_localPreset, "Off", StringComparison.OrdinalIgnoreCase))
+        {
+            <input type="range" min="0" max="1" step="0.01"
+                   value="@_localMix.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                   @oninput="e => DragMix(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                   @onchange="e => UpdateMix(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                   class="medytao-slider reverb-slider"
+                   style="--slider-fill: @((int)(_localMix * 100))%"
+                   title="Reverb wet/dry mix" />
+            <span class="reverb-mix-value">@((int)(_localMix * 100))%</span>
+        }
+    </div>
+
     <!-- Track list -->
     @if (!Layer.Tracks.Any())
     {
@@ -87,6 +114,13 @@
     // nie skakał do poprzedniej wartości podczas drag'u (parent refetchuje
     // DTO dopiero po zwolnieniu przycisku).
     private float _localVolume;
+    private string _localPreset = "Off";
+    private float _localMix;
+
+    // Lista presetów do wyrenderowania pill-buttonów. Kolejność świadoma:
+    // Off → Room → Hall = od minimum do maximum efektu, użytkownik intuicyjnie
+    // klikając w prawo "dodaje" reverbu. Strings = wartości wysyłane do API.
+    private static readonly string[] ReverbPresetOptions = ["Off", "Room", "Hall"];
 
     protected override void OnInitialized()
     {
@@ -98,6 +132,8 @@
     protected override void OnParametersSet()
     {
         _localVolume = Layer.Volume;
+        _localPreset = string.IsNullOrWhiteSpace(Layer.ReverbPreset) ? "Off" : Layer.ReverbPreset;
+        _localMix = Layer.ReverbMix;
     }
 
     private async Task DragVolume(float volume)
@@ -112,7 +148,7 @@
         // Live-update najpierw, żeby user usłyszał różnicę natychmiast —
         // persist do bazy i odświeżenie DTO mogą trochę zająć.
         await PlaybackSession.SetLayerVolumeAsync(Layer.Id, volume);
-        await MeditationSvc.UpdateLayerAsync(Layer.Id, volume, Layer.Muted);
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, volume, Layer.Muted, _localPreset, _localMix);
         await OnLayerChanged.InvokeAsync();
     }
 
@@ -120,7 +156,43 @@
     {
         var newMuted = !Layer.Muted;
         await PlaybackSession.SetLayerMutedAsync(Layer.Id, newMuted);
-        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, newMuted);
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, newMuted, _localPreset, _localMix);
+        await OnLayerChanged.InvokeAsync();
+    }
+
+    // Klik w pill presetu. Off ⇒ całkowite wyłączenie; pozostałe ⇒ aktywacja
+    // z aktualnym mixem (jeśli mix był 0, wskakujemy w 0.3 — czytelny default,
+    // żeby user wybierając "Hall" usłyszał efekt bez dodatkowego klikania w slider).
+    private async Task SelectPreset(string preset)
+    {
+        if (string.Equals(_localPreset, preset, StringComparison.OrdinalIgnoreCase)) return;
+        _localPreset = preset;
+        var isOff = string.Equals(preset, "Off", StringComparison.OrdinalIgnoreCase);
+        if (!isOff && _localMix <= 0f) _localMix = 0.3f;
+        if (isOff)
+        {
+            // Mix zachowujemy w stanie lokalnym? Nie — gdy user wraca do
+            // Room/Hall, woli wystartować z czytelnym defaultem (0.3) niż
+            // z poprzednim ustawieniem, którego nie pamięta. Reset do 0
+            // upraszcza model: "Off = wszystko wyłączone".
+            _localMix = 0f;
+        }
+        await PlaybackSession.SetLayerReverbAsync(Layer.Id, _localPreset, _localMix);
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, Layer.Muted, _localPreset, _localMix);
+        await OnLayerChanged.InvokeAsync();
+    }
+
+    private async Task DragMix(float mix)
+    {
+        _localMix = mix;
+        await PlaybackSession.SetLayerReverbAsync(Layer.Id, _localPreset, mix);
+    }
+
+    private async Task UpdateMix(float mix)
+    {
+        _localMix = mix;
+        await PlaybackSession.SetLayerReverbAsync(Layer.Id, _localPreset, mix);
+        await MeditationSvc.UpdateLayerAsync(Layer.Id, Layer.Volume, Layer.Muted, _localPreset, mix);
         await OnLayerChanged.InvokeAsync();
     }
 
@@ -243,6 +315,56 @@
     .empty-layer {
         padding: 24px 18px; text-align: center;
         color: var(--color-text-tertiary); font-size: 13px;
+    }
+
+    /* Pasek reverbu — nieco subtelniejsze tło niż header, mniejszy padding,
+       żeby nie konkurował wagą wizualną z volume. Pill-buttony na podobieństwo
+       segmentów; aktywny ma akcent info-color, jak inne aktywne stany w UI. */
+    .layer-reverb-bar {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 18px;
+        border-bottom: 1px solid var(--color-border-tertiary);
+        background: var(--color-background-primary);
+        font-size: 12px;
+    }
+    .reverb-label {
+        color: var(--color-text-tertiary);
+        min-width: 56px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        font-size: 11px;
+    }
+    .reverb-presets {
+        display: inline-flex;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .reverb-preset {
+        background: transparent;
+        border: none;
+        padding: 4px 12px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        border-right: 1px solid var(--color-border-tertiary);
+        transition: background .1s, color .1s;
+    }
+    .reverb-preset:last-child { border-right: none; }
+    .reverb-preset:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+    .reverb-preset.active {
+        background: var(--color-background-info);
+        color: var(--color-text-info);
+        font-weight: 500;
+    }
+
+    .reverb-slider { width: 140px; }
+    .reverb-mix-value {
+        font-size: 11px;
+        color: var(--color-text-secondary);
+        min-width: 32px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
     }
 
     .track-list { display: flex; flex-direction: column; }
