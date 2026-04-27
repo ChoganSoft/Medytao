@@ -134,16 +134,58 @@
     private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
     private float _playbackRate;
 
+    // Shadow-y per-pole — kopiujemy Track.X do _x tylko gdy parametr zmienił
+    // się z zewnątrz. Bez tego progress-timer sesji playbacku (tick co 250ms)
+    // resetowałby suwaki Volume / Speed do starej wartości w środku drag-u,
+    // bo parent dostaje świeży DTO dopiero po release (persist + refetch).
+    // NaN/min-int = sentinel "jeszcze nie widziane" → pierwszy render zawsze inicjalizuje.
+    private float _shadowVolume = float.NaN;
+    private int _shadowLoopCount = int.MinValue;
+    private int _shadowFadeIn = int.MinValue, _shadowFadeOut = int.MinValue;
+    private int _shadowStartOffset = int.MinValue, _shadowCrossfade = int.MinValue;
+    private float _shadowPlaybackRate = float.NaN;
+
     protected override void OnParametersSet()
     {
-        _volume = Track.Volume;
-        _loopCount = Track.LoopCount;
-        _fadeInMs = Track.FadeInMs;
-        _fadeOutMs = Track.FadeOutMs;
-        _startOffsetMs = Track.StartOffsetMs;
-        _crossfadeMs = Track.CrossfadeMs;
-        _playbackRate = Track.PlaybackRate;
+        if (!FloatEquals(_shadowVolume, Track.Volume))
+        {
+            _shadowVolume = Track.Volume;
+            _volume = Track.Volume;
+        }
+        if (_shadowLoopCount != Track.LoopCount)
+        {
+            _shadowLoopCount = Track.LoopCount;
+            _loopCount = Track.LoopCount;
+        }
+        if (_shadowFadeIn != Track.FadeInMs)
+        {
+            _shadowFadeIn = Track.FadeInMs;
+            _fadeInMs = Track.FadeInMs;
+        }
+        if (_shadowFadeOut != Track.FadeOutMs)
+        {
+            _shadowFadeOut = Track.FadeOutMs;
+            _fadeOutMs = Track.FadeOutMs;
+        }
+        if (_shadowStartOffset != Track.StartOffsetMs)
+        {
+            _shadowStartOffset = Track.StartOffsetMs;
+            _startOffsetMs = Track.StartOffsetMs;
+        }
+        if (_shadowCrossfade != Track.CrossfadeMs)
+        {
+            _shadowCrossfade = Track.CrossfadeMs;
+            _crossfadeMs = Track.CrossfadeMs;
+        }
+        if (!FloatEquals(_shadowPlaybackRate, Track.PlaybackRate))
+        {
+            _shadowPlaybackRate = Track.PlaybackRate;
+            _playbackRate = Track.PlaybackRate;
+        }
     }
+
+    private static bool FloatEquals(float a, float b) =>
+        !float.IsNaN(a) && !float.IsNaN(b) && Math.Abs(a - b) < 0.0001f;
 
     private void ToggleExpand() => _expanded = !_expanded;
 
