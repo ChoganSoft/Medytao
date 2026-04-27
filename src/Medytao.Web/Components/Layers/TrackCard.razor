@@ -74,6 +74,32 @@
                 <span class="detail-label">Crossfade to next</span>
                 <input type="number" min="0" step="100" @bind="_crossfadeMs" class="ms-input" /> ms
             </div>
+
+            @* Slider tempa — wyłącznie dla warstwy Text. Reszta warstw nie
+               dostaje go w UI; wartość w DTO i tak zostaje 1.0, więc backend
+               nigdy nie dostanie "lewej" prędkości z innej warstwy. Zakres
+               0.75–1.25 trzymamy jako UX-owy "sweet spot": preservesPitch
+               daje czyste rezultaty, ekstrema bez zmiany pitcha brzmią
+               cyfrowo (artefakty time-stretchu). Krok 0.05 = 11 pozycji. *@
+            @if (LayerType == "Text")
+            {
+                <div class="detail-row speed-row">
+                    <span class="detail-label">Speed</span>
+                    <input type="range" min="0.75" max="1.25" step="0.05"
+                           value="@_playbackRate.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                           @oninput="e => OnPlaybackRateInput(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                           @onchange="e => OnPlaybackRateChange(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                           class="medytao-slider speed-slider"
+                           style="--slider-fill: @SpeedFillPercent()%"
+                           title="Playback speed (1.00× = normal)" />
+                    <span class="speed-value">@_playbackRate.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)×</span>
+                    @if (Math.Abs(_playbackRate - 1.0f) > 0.001f)
+                    {
+                        <button class="speed-reset" @onclick="ResetPlaybackRate" title="Reset to 1.00×">↺</button>
+                    }
+                </div>
+            }
+
             <div class="detail-actions">
                 <button class="btn-save" @onclick="SaveDetail">Save changes</button>
             </div>
@@ -84,6 +110,12 @@
 @code {
     [Parameter, EditorRequired] public TrackDto Track { get; set; } = null!;
     [Parameter, EditorRequired] public Guid LayerId { get; set; }
+    /// <summary>
+    /// Typ warstwy ("Music"/"Nature"/"Text"/"Fx"). Steruje widocznością
+    /// kontrolek specyficznych dla danej warstwy — dziś slider tempa
+    /// pojawia się wyłącznie dla "Text" (lektor).
+    /// </summary>
+    [Parameter, EditorRequired] public string LayerType { get; set; } = "";
     /// <summary>
     /// True when this track loops forever AND there are later tracks in the same layer
     /// that will never play because of that. Shown as a subtle ∞ badge.
@@ -101,6 +133,7 @@
     private float _volume;
     private int _loopCount;
     private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
+    private float _playbackRate;
 
     protected override void OnParametersSet()
     {
@@ -110,6 +143,7 @@
         _fadeOutMs = Track.FadeOutMs;
         _startOffsetMs = Track.StartOffsetMs;
         _crossfadeMs = Track.CrossfadeMs;
+        _playbackRate = Track.PlaybackRate;
     }
 
     private void ToggleExpand() => _expanded = !_expanded;
@@ -148,9 +182,42 @@
         await OnChanged.InvokeAsync();
     }
 
+    // Tempo: drag = live update silnika audio bez DB; release = persist.
+    // Dzięki temu user słyszy zmianę natychmiast (preservesPitch działa
+    // na żywo na <audio>), a do bazy idzie jedna PUT-ka po puszczeniu.
+    private async Task OnPlaybackRateInput(float v)
+    {
+        _playbackRate = v;
+        await PlaybackSession.SetTrackPlaybackRateAsync(LayerId, Track.Id, v);
+    }
+
+    private async Task OnPlaybackRateChange(float v)
+    {
+        _playbackRate = v;
+        await PlaybackSession.SetTrackPlaybackRateAsync(LayerId, Track.Id, v);
+        await PersistAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ResetPlaybackRate()
+    {
+        _playbackRate = 1.0f;
+        await PlaybackSession.SetTrackPlaybackRateAsync(LayerId, Track.Id, 1.0f);
+        await PersistAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    // Wypełnienie suwaka 0–100% w obrębie zakresu 0.75–1.25 (długość 0.5).
+    private int SpeedFillPercent()
+    {
+        const float min = 0.75f, max = 1.25f;
+        var clamped = Math.Clamp(_playbackRate, min, max);
+        return (int)Math.Round((clamped - min) / (max - min) * 100);
+    }
+
     private Task PersistAsync() =>
         MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loopCount,
-            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs);
+            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs, _playbackRate);
 
     private async Task Remove()
     {
@@ -236,6 +303,30 @@
         background: var(--color-background-primary);
         color: var(--color-text-primary); font-size: 13px;
     }
+    /* Slider tempa — zajmuje pełną szerokość rzędu, żeby user miał miejsce
+       na precyzyjne drag-i. Etykieta po lewej (jak w innych detail-row),
+       slider rozciąga się elastycznie, a na końcu wartość i przycisk reset. */
+    .detail-row.speed-row { flex: 1 1 100%; gap: 12px; }
+    .speed-slider { flex: 1; min-width: 160px; max-width: 320px; }
+    .speed-value {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        min-width: 48px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+    .speed-reset {
+        background: none;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 13px;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        line-height: 1;
+    }
+    .speed-reset:hover { color: var(--color-text-primary); border-color: var(--color-border-primary); }
+
     .detail-actions { width: 100%; margin-top: 4px; }
     .btn-save {
         padding: 6px 14px; border-radius: 6px;

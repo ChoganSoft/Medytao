@@ -25,7 +25,8 @@ public static class LayerEndpoints
                 layerId, req.AssetId,
                 req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
-                req.StartOffsetMs, req.CrossfadeMs));
+                req.StartOffsetMs, req.CrossfadeMs,
+                req.PlaybackRate));
             return Results.Created($"/api/v1/layers/{layerId}/tracks/{result.Id}", result);
         });
 
@@ -34,7 +35,8 @@ public static class LayerEndpoints
             var result = await mediator.Send(new UpdateTrackCommand(
                 trackId, req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
-                req.StartOffsetMs, req.CrossfadeMs));
+                req.StartOffsetMs, req.CrossfadeMs,
+                req.PlaybackRate));
             return Results.Ok(result);
         });
 
@@ -60,12 +62,14 @@ public record AddTrackRequest(
     int FadeInMs = 0,
     int FadeOutMs = 0,
     int StartOffsetMs = 0,
-    int CrossfadeMs = 0);
+    int CrossfadeMs = 0,
+    float PlaybackRate = 1f);
 public record UpdateTrackRequest(
     float Volume,
     int LoopCount,
     int FadeInMs,
     int FadeOutMs,
     int StartOffsetMs,
-    int CrossfadeMs);
+    int CrossfadeMs,
+    float PlaybackRate);
 public record ReorderTracksRequest(IEnumerable<Guid> OrderedTrackIds);

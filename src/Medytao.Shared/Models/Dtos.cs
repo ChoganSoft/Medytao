@@ -25,6 +25,11 @@ public record AssetDto(
 );
 
 // ── Track ──────────────────────────────────────────────
+// PlaybackRate: 1.0 = normalna prędkość. UI rysuje slider 0.75–1.25× tylko
+// dla tracków warstwy Text (decyzja produktowa: spowolnienie potrzebne tylko
+// na lektorze). Field jednak jest per-Track, bo różne fragmenty narracji
+// mogą wymagać różnego tempa. Default 1.0 zachowuje semantykę dla starych
+// medytacji bez tej wartości.
 public record TrackDto(
     Guid Id,
     int Order,
@@ -34,6 +39,7 @@ public record TrackDto(
     int FadeOutMs,
     int StartOffsetMs,
     int CrossfadeMs,
+    float PlaybackRate,
     AssetDto Asset
 );
 
