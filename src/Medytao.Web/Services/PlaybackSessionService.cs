@@ -43,6 +43,18 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     // disposuje service razem z całym tabem.
     private MeditationDetailDto? _lastMeditation;
 
+    // Cache durationMs odkrytych przez JS (lazy-fetch metadanych przy starcie
+    // sesji, bo backend ich nie zapisuje). Klucz = trackId, wartość = ms.
+    // UI używa tego jako fallback gdy Asset.DurationMs w DTO jest NULL —
+    // bez tego skala suwaka byłaby niedoszacowana i suwak osiągałby 100%
+    // zanim audio dojdzie do końca.
+    private readonly Dictionary<Guid, int> _fetchedDurations = new();
+
+    // DotNetObjectReference przekazywany do JS — strona JS używa go do
+    // wywołania ReportTrackDuration po pobraniu metadanych. Trzymamy
+    // referencję żeby ją dispose'ować przy stop/dispose service.
+    private DotNetObjectReference<PlaybackSessionService>? _dotNetRef;
+
     public PlaybackSessionService(IJSRuntime js) => _js = js;
 
     /// <summary>Sygnalizuje zmianę stanu (start / stop / tick progressu).</summary>
@@ -61,6 +73,29 @@ public sealed class PlaybackSessionService : IAsyncDisposable
 
     public LayerProgress? GetProgress(Guid layerId) =>
         _progressByLayer.TryGetValue(layerId, out var p) ? p : null;
+
+    /// <summary>
+    /// Zwraca durationMs tracka odkryte przez JS w bieżącej sesji, lub null
+    /// jeśli nie było jeszcze pobrane (albo fetch się nie udał). Używane
+    /// przez UI do liczenia skali timeline-a, gdy Asset.DurationMs w DTO
+    /// jest NULL (typowy stan, bo upload nie zapisuje metadanych).
+    /// </summary>
+    public int? KnownDuration(Guid trackId) =>
+        _fetchedDurations.TryGetValue(trackId, out var ms) ? ms : null;
+
+    /// <summary>
+    /// Wywoływane z JS (medytaoPlayer.ensureDurations) gdy uda się pobrać
+    /// durationMs dla tracka bez metadanych. Aktualizujemy cache i emitujemy
+    /// OnChanged żeby UI mogło natychmiast przeliczyć skalę suwaka.
+    /// JSInvokable musi być publiczny i instance method.
+    /// </summary>
+    [JSInvokable]
+    public void ReportTrackDuration(Guid trackId, int ms)
+    {
+        if (ms <= 0) return;
+        _fetchedDurations[trackId] = ms;
+        OnChanged?.Invoke();
+    }
 
     /// <summary>
     /// Master-clock medytacji: ile ms minęło od pozycji "ms 0" tej sesji.
@@ -109,6 +144,12 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         // bez konieczności przeładowywania DTO przez API.
         _lastMeditation = meditation;
 
+        // Świeży DotNetObjectReference per restart sesji — stary mógł być
+        // już dispose'owany w StopAsync. Pojedyncza referencja na sesję,
+        // JS używa jej w ensureDurations do raportowania pobranych metadanych.
+        _dotNetRef?.Dispose();
+        _dotNetRef = DotNetObjectReference.Create(this);
+
         var layers = meditation.Layers
             .Where(l => l.Tracks.Any())
             .Select(l => new
@@ -152,7 +193,7 @@ public sealed class PlaybackSessionService : IAsyncDisposable
 
         try
         {
-            _sessionId = await _js.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers, startFromMs);
+            _sessionId = await _js.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers, startFromMs, _dotNetRef);
             _meditationId = meditation.Id;
             // Cofnij _sessionStartedAt o startFromMs, żeby ElapsedMs zwracał
             // od razu właściwą pozycję (a nie "od kliknięcia, którego user
@@ -325,6 +366,8 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         StopProgressTimer();
+        _dotNetRef?.Dispose();
+        _dotNetRef = null;
         if (_sessionId is not null)
         {
             try { await _js.InvokeVoidAsync("medytaoPlayer.stopSession", _sessionId); } catch { }
