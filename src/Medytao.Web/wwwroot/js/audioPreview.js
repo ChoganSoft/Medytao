@@ -591,15 +591,33 @@ window.meditationPlayer = window.medytaoAudio;
     }
 
     // Trigger time-anchored tracka w warstwie typu overlay (Text/Fx).
-    // Tworzymy nowy <audio> równolegle do tego, co aktualnie gra w warstwie —
-    // nie dotykamy state.audio ani sequenced sequence. Element żyje do swojego
-    // ended-eventu albo do stopSession (clearTimeout + disposeAudio).
+    // Tworzymy nowy <audio> równolegle do tego, co aktualnie gra w warstwie.
+    //
+    // Tryb zależy od layerType (egzekwowany przez isInterruptLayerType):
+    //   - Text → interrupt: nowy fragment wycisza wszystko inne grające
+    //     w warstwie (poprzednie overlay-e + aktualna sekwencja). Dwa głosy
+    //     lektora jeden na drugim brzmią jak chaos.
+    //   - Fx   → overlay: nowy gong/dzwon nakłada się na to, co już leci.
+    //     Świadomy efekt akustycznego akcentu nad podkładem.
     //
     // Volume warstwy/track aplikujemy bezpośrednio na audio.volume (jak w
     // sekwencyjnym playCurrent). PlaybackRate przez applyRate. Reverb dla
     // overlay-a obecnie pomijamy — wymaga buildTrackGraph, a w Stage 2 nie
-    // chcemy komplikować. Można dorzucić w follow-upie.
+    // chcemy komplikować.
     function triggerOverlay(state, track) {
+        if (isInterruptLayerType(state.layerType)) {
+            // Wycisz aktualny sekwencyjny audio (jeśli leci).
+            if (state.audio) {
+                disposeAudio(state.audio);
+                state.audio = null;
+            }
+            // Wycisz wszystkie wcześniejsze overlay-e tej warstwy.
+            if (state.scheduledOverlays && state.scheduledOverlays.length > 0) {
+                for (const a of state.scheduledOverlays) disposeAudio(a);
+                state.scheduledOverlays = [];
+            }
+        }
+
         const audio = createAudio(track.url);
         audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
         applyRate(audio, track.playbackRate);
@@ -617,11 +635,84 @@ window.meditationPlayer = window.medytaoAudio;
         audio.play().catch(err => console.warn('Medytao player: overlay play failed', err));
 
         console.debug('[medytaoPlayer] overlay triggered',
-            { layerId: state.layerId, trackId: track.trackId, startAtMs: track.startAtMs });
+            { layerId: state.layerId, layerType: state.layerType,
+              trackId: track.trackId, startAtMs: track.startAtMs,
+              interrupt: isInterruptLayerType(state.layerType) });
+    }
+
+    // Interrupt = "nowy track wycisza poprzedni w warstwie". Dziś tylko Text;
+    // w przyszłości może warstwa Music/Nature dostanie wariant interrupt
+    // bez crossfade-u (bo crossfade należy do Stage 3 i wymaga gain-rampu).
+    function isInterruptLayerType(layerType) {
+        if (!layerType) return false;
+        return String(layerType).toLowerCase() === 'text';
     }
 
     function newSessionId() {
         return 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    }
+
+    // Lazy-fetch metadata dla tracków bez znanego durationMs. Backend dziś
+    // przy uploadzie nie zapisuje duration (osobny ticket), więc istniejące
+    // assety mają DurationMs = NULL — bez tego silnik nie umie liczyć "co gra
+    // w sekundzie X" przy seeku, suwak fallback'uje do 0:00, a licznik totalu
+    // pokazuje placeholder 1:00.
+    //
+    // Robimy to RAZ przy każdym startSession (synchronicznie do startu
+    // playback-u, ale asynchronicznie wewnątrz). Pierwszy Play opóźnia się
+    // o ~ms na network round-trip do nagłówków audio (preload=metadata, nie
+    // ładujemy całego pliku), kolejne tracki podczas tej samej sesji nie
+    // płacą drugi raz, bo mutujemy track.durationMs in place. W kolejnych
+    // sesjach JS i tak dostaje świeże track-objekty z DTO, więc fetch się
+    // powtarza — to jest świadomy kompromis na rzecz prostoty (osobny ticket
+    // zoptymalizuje przez zapis do bazy).
+    function fetchDurationFor(track) {
+        return new Promise(resolve => {
+            const audio = new Audio();
+            audio.preload = 'metadata';
+            audio.crossOrigin = 'anonymous';
+            audio.src = track.url;
+
+            const cleanup = () => {
+                try { audio.src = ''; } catch { }
+            };
+            const timer = setTimeout(() => {
+                cleanup();
+                resolve(null);
+            }, 8000); // 8s — sensible upper bound dla wolnego storage
+
+            audio.addEventListener('loadedmetadata', () => {
+                clearTimeout(timer);
+                const ms = isFinite(audio.duration) && audio.duration > 0
+                    ? Math.round(audio.duration * 1000)
+                    : null;
+                cleanup();
+                resolve(ms);
+            });
+            audio.addEventListener('error', () => {
+                clearTimeout(timer);
+                cleanup();
+                resolve(null);
+            });
+        });
+    }
+
+    async function ensureDurations(layers) {
+        const promises = [];
+        for (const l of (layers || [])) {
+            for (const t of (l.tracks || [])) {
+                if (typeof t.durationMs === 'number' && t.durationMs > 0) continue;
+                promises.push(
+                    fetchDurationFor(t).then(ms => {
+                        if (ms) t.durationMs = ms;
+                    })
+                );
+            }
+        }
+        if (promises.length > 0) {
+            console.debug('[medytaoPlayer] fetching durations for', promises.length, 'tracks');
+            await Promise.all(promises);
+        }
     }
 
     window.medytaoPlayer = {
@@ -630,7 +721,13 @@ window.meditationPlayer = window.medytaoAudio;
         // znajdujemy track, który grałby w tym momencie, ustawiamy jego
         // currentTime na offset wewnątrz, doliczamy ile pętli już się odbyło.
         // Pozwala seekować bez konieczności słuchania wszystkiego od zera.
-        startSession(layers, startFromMs) {
+        async startSession(layers, startFromMs) {
+            // Pobierz brakujące metadane PRZED zbudowaniem grafu warstw —
+            // applyFastForward i scheduleAnchoredTracks polegają na
+            // track.durationMs przy seeku, więc bez tego seek by zawsze
+            // wracał do fallback "od zera".
+            await ensureDurations(layers);
+
             const sessionId = newSessionId();
             const seekMs = (typeof startFromMs === 'number' && startFromMs > 0) ? startFromMs : 0;
             const layerStates = (layers || [])

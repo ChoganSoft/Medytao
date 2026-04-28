@@ -114,31 +114,47 @@ else
     // Czyszczone w OnSeekRelease (gdy user puści przycisk myszy).
     private double? _seekDragMs;
 
-    // Łączna długość medytacji liczona z warstw (max po sumie duration*loopCount
-    // każdego tracka). Meditation.DurationMs w DTO jest ustawiany ręcznie
-    // i nie aktualizuje się automatycznie po dodaniu/usunięciu tracka, więc
-    // dla seekbar polegamy na pochodnej. LoopCount=0 (loop forever) traktujemy
-    // jako "tylko jeden raz" — inaczej totalDuration byłoby nieskończone
-    // i suwak nie miałby sensu. Brak metadanych (durationMs == null) = 0.
+    // Łączna długość medytacji liczona z warstw. Bierzemy max po dwóch
+    // niezależnych miarach:
+    //   1. sumaryczny czas sekwencji warstwy (sum duration*loopCount) —
+    //      tylko gdy mamy metadane assetów,
+    //   2. najpóźniejszy StartAtMs scheduled tracka + 60s ogona — daje
+    //      sensowną skalę nawet bez metadanych (suwak dotrze do ostatniego
+    //      triggera plus rezerwa na jego dźwięk).
+    // Meditation.DurationMs w DTO ignorujemy — bywa nieaktualny (ustawiany
+    // ręcznie, nie po edytach tracków). LoopCount=0 (loop forever) liczymy
+    // jako "1 raz", inaczej totalDuration byłoby nieskończone. Minimum 60s
+    // żeby slider miał skalę nawet w pustej medytacji.
     private double ComputeTotalDurationMs()
     {
         if (_meditation is null) return 0;
-        double max = 0;
+        double maxLayerDuration = 0;
+        double maxScheduledEnd = 0;
         foreach (var layer in _meditation.Layers)
         {
             double sum = 0;
             foreach (var t in layer.Tracks)
             {
                 var d = t.Asset.DurationMs ?? 0;
-                if (d <= 0) continue;
-                var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
-                sum += d * (double)loops;
+                if (d > 0)
+                {
+                    var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
+                    sum += d * (double)loops;
+                }
+                if (t.StartAtMs.HasValue)
+                {
+                    // Schedulowany trigger sięga do swojego StartAtMs + długość
+                    // sample-a (lub 0 jeśli nieznana). Plus 60s ogona dla
+                    // czytelnej skali suwaka — user widzi że za triggerem
+                    // jeszcze coś może się dziać.
+                    var endpoint = t.StartAtMs.Value + d + 60_000;
+                    if (endpoint > maxScheduledEnd) maxScheduledEnd = endpoint;
+                }
             }
-            if (sum > max) max = sum;
+            if (sum > maxLayerDuration) maxLayerDuration = sum;
         }
-        // Sensowny minimal — pusta medytacja (np. wszystkie tracki bez metadanych)
-        // dostaje 60s skali, żeby suwak miał z czym pracować zamiast div-by-zero.
-        return max > 0 ? max : 60_000;
+        var total = Math.Max(maxLayerDuration, maxScheduledEnd);
+        return total > 0 ? total : 60_000;
     }
 
     private static string FormatMs(double ms)
