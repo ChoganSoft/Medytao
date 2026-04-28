@@ -87,7 +87,12 @@
            Tekst w wariancie "© <rok> <domena>. All rights reserved." — to
            standardowa forma copyright-notice w aplikacjach webowych. *@
         <footer class="app-footer">
-            © @DateTime.UtcNow.Year medytao.com. All rights reserved.
+            @* target=_blank + rel=noopener noreferrer: link otwiera się w nowej
+               karcie (nie wyrzucamy usera z aplikacji-SPA w środku sesji),
+               a noopener/noreferrer to standard bezpieczeństwa dla zewnętrznych
+               linków — strona docelowa nie dostaje window.opener z naszą
+               instancją Blazora ani Referer header. *@
+            © @DateTime.UtcNow.Year <a href="https://medytao.com" target="_blank" rel="noopener noreferrer" class="footer-link">medytao.com</a>. All rights reserved.
         </footer>
     </div>
 </div>
@@ -404,5 +409,19 @@
         font-size: 12px;
         text-align: left;
         letter-spacing: 0.02em;
+    }
+
+    /* Link domeny — subtelny, podchodzący pod kolor stopki, żeby copyright
+       nie wyglądał krzykliwie. Underline pojawia się na hoverze, kolor
+       dochodzi do text-secondary (lekki kontrast). inherit dla domyślnego
+       koloru = automatyczna spójność z motywem (light/dark). */
+    .app-footer .footer-link {
+        color: inherit;
+        text-decoration: none;
+        transition: color 0.15s, text-decoration-color 0.15s;
+    }
+    .app-footer .footer-link:hover {
+        color: var(--color-text-secondary);
+        text-decoration: underline;
     }
 </style>
