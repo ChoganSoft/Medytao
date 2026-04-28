@@ -124,6 +124,26 @@
                 <span class="reverb-mix-value">@((int)(_reverbMix * 100))%</span>
             </div>
 
+            @* Time-anchored start: checkbox włącza tryb, mm:ss input ustawia
+               moment master-clocka, w którym track ma wystartować. Dla warstwy
+               Text/Fx silnik odpala overlay; dla Music/Nature na razie tylko
+               persistujemy wartość — info pod inputem mówi "coming soon".
+               Toggle off = StartAtMs zostaje wyzerowane (null) → tryb sekwencyjny. *@
+            <div class="detail-row start-at-row">
+                <label class="start-at-toggle">
+                    <input type="checkbox" checked="@_startAtEnabled" @onchange="OnStartAtToggle" />
+                    <span class="detail-label start-at-label">Start at specific time</span>
+                </label>
+                @if (_startAtEnabled)
+                {
+                    <input type="text" class="mmss-input"
+                           value="@FormatMmSs(_startAtMs)"
+                           @onchange="e => OnStartAtMmSsChange(e.Value?.ToString())"
+                           placeholder="mm:ss" />
+                    <span class="start-at-note" title="@StartAtNoteTitle()">@StartAtNoteText()</span>
+                }
+            </div>
+
             <div class="detail-actions">
                 <button class="btn-save" @onclick="SaveDetail">Save changes</button>
             </div>
@@ -172,6 +192,8 @@
     private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
     private float _playbackRate;
     private float _reverbMix;
+    private bool _startAtEnabled;
+    private int _startAtMs;
 
     // Shadow-y per-pole — kopiujemy Track.X do _x tylko gdy parametr zmienił
     // się z zewnątrz. Bez tego progress-timer sesji playbacku (tick co 250ms)
@@ -184,6 +206,10 @@
     private int _shadowStartOffset = int.MinValue, _shadowCrossfade = int.MinValue;
     private float _shadowPlaybackRate = float.NaN;
     private float _shadowReverbMix = float.NaN;
+    // Sentinel "jeszcze nie widziane" dla nullable int — używamy magicznej
+    // wartości int.MinValue, bo prawdziwy StartAtMs jest >=0. Track.StartAtMs
+    // == null mapujemy na _shadowStartAt = -1 i _startAtEnabled = false.
+    private int _shadowStartAt = int.MinValue;
 
     protected override void OnParametersSet()
     {
@@ -226,6 +252,15 @@
         {
             _shadowReverbMix = Track.ReverbMix;
             _reverbMix = Track.ReverbMix;
+        }
+        // -1 jako "kanonicznie null" dla shadow comparisons. Track.StartAtMs ?? -1
+        // robi to samo dla rzeczywistej wartości, więc porównanie jest spójne.
+        var incomingStartAt = Track.StartAtMs ?? -1;
+        if (_shadowStartAt != incomingStartAt)
+        {
+            _shadowStartAt = incomingStartAt;
+            _startAtEnabled = Track.StartAtMs.HasValue;
+            _startAtMs = Track.StartAtMs ?? 0;
         }
     }
 
@@ -317,9 +352,83 @@
         await OnChanged.InvokeAsync();
     }
 
-    private Task PersistAsync() =>
-        MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loopCount,
-            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs, _playbackRate, _reverbMix);
+    // Toggle "Start at specific time": włączenie ⇒ używamy aktualnej wartości
+    // _startAtMs (lub 0 jeśli pusta), wyłączenie ⇒ wracamy do tryb sekwencyjny
+    // (StartAtMs = null w bazie). Po toggle persist od razu, żeby user widział
+    // efekt natychmiast (silnik audio na live-update reaguje przy następnym
+    // restarcie sesji — Stop+Play; live re-schedulowanie podczas grania
+    // zostawiamy jako follow-up, jeśli okaże się potrzebne).
+    private async Task OnStartAtToggle(ChangeEventArgs e)
+    {
+        _startAtEnabled = e.Value is bool b && b;
+        await PersistAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnStartAtMmSsChange(string? raw)
+    {
+        var parsed = ParseMmSs(raw);
+        if (parsed.HasValue) _startAtMs = parsed.Value;
+        await PersistAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    // Parsuje "mm:ss" (np. "2:30" → 150000 ms). Akceptuje też samą liczbę
+    // sekund ("90" → 90000). Bezpieczne na puste/nieparsowalne — zwraca null,
+    // wartość się nie zmienia. Zakres na sekundach 0..59 wymuszamy w trakcie
+    // parsowania (60+ sekund powinno być wyrażone w minutach).
+    private static int? ParseMmSs(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        raw = raw.Trim();
+        if (raw.Contains(':'))
+        {
+            var parts = raw.Split(':', 2);
+            if (parts.Length != 2) return null;
+            if (!int.TryParse(parts[0], out var m) || !int.TryParse(parts[1], out var s)) return null;
+            if (m < 0 || s < 0 || s > 59) return null;
+            return (m * 60 + s) * 1000;
+        }
+        if (int.TryParse(raw, out var seconds))
+        {
+            if (seconds < 0) return null;
+            return seconds * 1000;
+        }
+        return null;
+    }
+
+    private static string FormatMmSs(int ms)
+    {
+        if (ms < 0) ms = 0;
+        var total = ms / 1000;
+        var m = total / 60;
+        var s = total % 60;
+        return $"{m}:{s:00}";
+    }
+
+    // Podpis pod inputem mm:ss różny per warstwa — informuje co realnie
+    // robi silnik audio z time-anchored trackiem w tej warstwie.
+    private string StartAtNoteText() => LayerType?.ToLowerInvariant() switch
+    {
+        "text" => "Plays as overlay",
+        "fx" => "Plays as one-shot accent",
+        "music" => "(Music/Nature scheduling — coming soon)",
+        "nature" => "(Music/Nature scheduling — coming soon)",
+        _ => ""
+    };
+
+    private string StartAtNoteTitle() => LayerType?.ToLowerInvariant() is "music" or "nature"
+        ? "Crossfade scheduling for Music/Nature comes in a later iteration"
+        : "";
+
+    private Task PersistAsync()
+    {
+        // Przekazujemy _startAtMs tylko gdy toggle jest on; off ⇒ null
+        // (tryb sekwencyjny w bazie).
+        int? startAt = _startAtEnabled ? Math.Max(0, _startAtMs) : (int?)null;
+        return MeditationSvc.UpdateTrackAsync(Track.Id, LayerId, _volume, _loopCount,
+            _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs, _playbackRate, _reverbMix, startAt);
+    }
 
     private async Task Remove()
     {
@@ -449,6 +558,29 @@
         color: var(--color-text-primary);
         min-width: 56px;
         font-variant-numeric: tabular-nums;
+    }
+
+    /* Time-anchored start: checkbox + mm:ss input + opisowy podpis. Pełna
+       szerokość rzędu, gap analogiczny do pozostałych detail-row. */
+    .detail-row.start-at-row { flex: 1 1 100%; gap: 12px; }
+    .start-at-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+    .start-at-label { min-width: 0; }
+    .mmss-input {
+        width: 72px; padding: 4px 8px; border-radius: 4px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary); font-size: 13px;
+        font-variant-numeric: tabular-nums;
+    }
+    .start-at-note {
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        font-style: italic;
     }
 
     .detail-actions { width: 100%; margin-top: 4px; }

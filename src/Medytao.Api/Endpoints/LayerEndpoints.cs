@@ -26,7 +26,8 @@ public static class LayerEndpoints
                 req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
                 req.StartOffsetMs, req.CrossfadeMs,
-                req.PlaybackRate, req.ReverbMix));
+                req.PlaybackRate, req.ReverbMix,
+                req.StartAtMs));
             return Results.Created($"/api/v1/layers/{layerId}/tracks/{result.Id}", result);
         });
 
@@ -36,7 +37,8 @@ public static class LayerEndpoints
                 trackId, req.Volume, req.LoopCount,
                 req.FadeInMs, req.FadeOutMs,
                 req.StartOffsetMs, req.CrossfadeMs,
-                req.PlaybackRate, req.ReverbMix));
+                req.PlaybackRate, req.ReverbMix,
+                req.StartAtMs));
             return Results.Ok(result);
         });
 
@@ -64,7 +66,8 @@ public record AddTrackRequest(
     int StartOffsetMs = 0,
     int CrossfadeMs = 0,
     float PlaybackRate = 1f,
-    float ReverbMix = 0f);
+    float ReverbMix = 0f,
+    int? StartAtMs = null);
 public record UpdateTrackRequest(
     float Volume,
     int LoopCount,
@@ -73,5 +76,6 @@ public record UpdateTrackRequest(
     int StartOffsetMs,
     int CrossfadeMs,
     float PlaybackRate,
-    float ReverbMix);
+    float ReverbMix,
+    int? StartAtMs);
 public record ReorderTracksRequest(IEnumerable<Guid> OrderedTrackIds);

@@ -167,6 +167,10 @@ public class TrackConfiguration : IEntityTypeConfiguration<Track>
         // ReverbMix: 0 = brak efektu (graf audio bypass'uje convolver), więc
         // stare tracki bez tej kolumny brzmią identycznie jak przed dodaniem.
         b.Property(t => t.ReverbMix).HasDefaultValue(0.0f);
+        // StartAtMs: nullable. NULL = tryb sekwencyjny (default), wartość =
+        // time-anchored. Brak default value w konfiguracji — EF pozostawia
+        // NULL dla istniejących wierszy po dodaniu kolumny, co jest pożądane
+        // (semantyka "stare tracki grają tak jak grały").
 
         b.HasOne(t => t.Asset)
             .WithMany(a => a.Tracks)

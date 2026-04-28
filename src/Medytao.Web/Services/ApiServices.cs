@@ -96,10 +96,10 @@ public class MeditationService(HttpClient http)
 
     public async Task<TrackDto?> UpdateTrackAsync(Guid trackId, Guid layerId,
         float volume, int loopCount, int fadeInMs, int fadeOutMs, int startOffsetMs, int crossfadeMs,
-        float playbackRate, float reverbMix)
+        float playbackRate, float reverbMix, int? startAtMs)
     {
         var response = await http.PutAsJsonAsync($"/api/v1/layers/{layerId}/tracks/{trackId}",
-            new { volume, loopCount, fadeInMs, fadeOutMs, startOffsetMs, crossfadeMs, playbackRate, reverbMix });
+            new { volume, loopCount, fadeInMs, fadeOutMs, startOffsetMs, crossfadeMs, playbackRate, reverbMix, startAtMs });
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<TrackDto>() : null;
     }
 

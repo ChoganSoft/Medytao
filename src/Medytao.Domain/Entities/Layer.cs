@@ -70,4 +70,24 @@ public class Track : BaseEntity
     /// jako default).
     /// </summary>
     public float ReverbMix { get; set; } = 0.0f;
+
+    /// <summary>
+    /// Czas (ms od początku medytacji), w którym track ma wystartować.
+    /// null = tryb sekwencyjny — track gra w kolejce wg Order, jak
+    /// dotychczas. Wartość != null = time-anchored — track jest "zaplanowany"
+    /// na konkretny moment master-clocka sesji.
+    ///
+    /// Semantyka triggera różni się per warstwa (egzekwowana w silniku audio):
+    ///   Text, Fx       → overlay: track gra równolegle do reszty warstwy.
+    ///                    Główny use-case: kontrola odstępów między fragmentami
+    ///                    narracji (Text) i punktowe akcenty (Fx — gong, bell).
+    ///   Music, Nature  → docelowo: crossfade z aktualnie grającym tłem.
+    ///                    Implementacja w Etapie 3; obecnie wartość jest
+    ///                    przyjmowana w API ale silnik ją ignoruje (UI
+    ///                    informuje "coming soon").
+    ///
+    /// Backend nie waliduje upper bound — user może ustawić StartAtMs
+    /// poza długością medytacji, taki trigger po prostu nigdy nie wystrzeli.
+    /// </summary>
+    public int? StartAtMs { get; set; }
 }

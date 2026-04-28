@@ -34,7 +34,8 @@ public record AddTrackCommand(
     float Volume = 1f, int LoopCount = 1,
     int FadeInMs = 0, int FadeOutMs = 0,
     int StartOffsetMs = 0, int CrossfadeMs = 0,
-    float PlaybackRate = 1f, float ReverbMix = 0f
+    float PlaybackRate = 1f, float ReverbMix = 0f,
+    int? StartAtMs = null
 ) : IRequest<TrackDto>;
 
 public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackRepo, IAssetRepository assetRepo, IUnitOfWork uow, IStorageService storage)
@@ -70,6 +71,8 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
             CrossfadeMs = cmd.CrossfadeMs,
             PlaybackRate = cmd.PlaybackRate,
             ReverbMix = Math.Clamp(cmd.ReverbMix, 0f, 1f),
+            // StartAtMs: clamp do >=0 jeśli ustawiony. null zostaje null.
+            StartAtMs = cmd.StartAtMs.HasValue ? Math.Max(0, cmd.StartAtMs.Value) : null,
             Asset = asset
         };
 
@@ -83,7 +86,8 @@ public class AddTrackHandler(ILayerRepository layerRepo, ITrackRepository trackR
 public record UpdateTrackCommand(
     Guid TrackId, float Volume, int LoopCount,
     int FadeInMs, int FadeOutMs, int StartOffsetMs, int CrossfadeMs,
-    float PlaybackRate, float ReverbMix
+    float PlaybackRate, float ReverbMix,
+    int? StartAtMs
 ) : IRequest<TrackDto>;
 
 public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorageService storage)
@@ -105,6 +109,7 @@ public class UpdateTrackHandler(ITrackRepository repo, IUnitOfWork uow, IStorage
         // wartości i tak są klamrowane do tego okna.
         track.PlaybackRate = Math.Clamp(cmd.PlaybackRate, 0.5f, 2.0f);
         track.ReverbMix = Math.Clamp(cmd.ReverbMix, 0f, 1f);
+        track.StartAtMs = cmd.StartAtMs.HasValue ? Math.Max(0, cmd.StartAtMs.Value) : null;
         track.UpdatedAt = DateTimeOffset.UtcNow;
 
         await repo.UpdateAsync(track, ct);
@@ -149,7 +154,7 @@ internal static class LayerMappings
     public static TrackDto ToDto(this Track t, IStorageService storage) => new(
         t.Id, t.Order, t.Volume, t.LoopCount,
         t.FadeInMs, t.FadeOutMs, t.StartOffsetMs, t.CrossfadeMs,
-        t.PlaybackRate, t.ReverbMix,
+        t.PlaybackRate, t.ReverbMix, t.StartAtMs,
         // Tu DTO trafia w karty tracków w edytorze — toggle/kosz nie są
         // pokazywane, więc IsMine ustawiamy zachowawczo na false. IsShared
         // odzwierciedla rzeczywisty stan, na wypadek gdyby UI miał kiedyś
