@@ -83,9 +83,11 @@
         @* Globalna stopka. Renderowana w main-column (a nie w app-shell), żeby
            sidebar nie miał obok siebie pustego pasa, gdy stopka jest wąska.
            Rok dynamicznie z DateTime.UtcNow — Blazor WASM liczy to po stronie
-           klienta, więc każdy user widzi aktualną wartość bez deploymentu. *@
+           klienta, więc każdy user widzi aktualną wartość bez deploymentu.
+           Tekst w wariancie "© <rok> <domena>. All rights reserved." — to
+           standardowa forma copyright-notice w aplikacjach webowych. *@
         <footer class="app-footer">
-            © @DateTime.UtcNow.Year Copyright by medytao.com
+            © @DateTime.UtcNow.Year medytao.com. All rights reserved.
         </footer>
     </div>
 </div>
@@ -390,7 +392,9 @@
     /* Stopka — wąski pasek pod scrollowanym contentem. flex-shrink:0 trzyma
        ją zawsze widoczną niezależnie od długości strony (main-content scrolluje
        sam siebie, stopka zostaje przyklejona do dołu kolumny). Tła i obwódki
-       reagują na motyw przez zmienne CSS, więc tryb ciemny ją podchwyca. */
+       reagują na motyw przez zmienne CSS, więc tryb ciemny ją podchwyca.
+       Wyrównanie do lewej spina stopkę z lewym marginesem contentu (24px),
+       więc copyright wpada w jedną oś z page-headerami stron poniżej. */
     .app-footer {
         flex-shrink: 0;
         padding: 10px 24px;
@@ -398,7 +402,7 @@
         background: var(--color-background-primary);
         color: var(--color-text-tertiary);
         font-size: 12px;
-        text-align: center;
+        text-align: left;
         letter-spacing: 0.02em;
     }
 </style>
