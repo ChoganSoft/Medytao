@@ -34,6 +34,11 @@ public record AssetDto(
 // ReverbMix: 0..1 wet/dry pojedynczego sounda. 0 = bypass (graf nie wpina
 // convolvera). Jeden zaszyty preset (Hall) — UI to slider 0–100% zawsze
 // widoczny w expanded panelu tracka, niezależnie od warstwy.
+//
+// StartAtMs: null = sekwencyjny (gra wg Order); wartość = time-anchored
+// (gra w tym konkretnym momencie master-clocka sesji). Engine traktuje
+// time-anchored różnie per warstwa — Text/Fx jako overlay, Music/Nature
+// jako crossfade (docelowo, na razie ignored).
 public record TrackDto(
     Guid Id,
     int Order,
@@ -45,6 +50,7 @@ public record TrackDto(
     int CrossfadeMs,
     float PlaybackRate,
     float ReverbMix,
+    int? StartAtMs,
     AssetDto Asset
 );
 

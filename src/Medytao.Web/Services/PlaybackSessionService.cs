@@ -105,6 +105,10 @@ public sealed class PlaybackSessionService : IAsyncDisposable
             .Select(l => new
             {
                 id = l.Id,
+                // type ("Music"/"Nature"/"Text"/"Fx") steruje semantyką
+                // time-anchored triggerów po stronie JS — Text/Fx jako overlay,
+                // Music/Nature na razie ignored (wsparcie w Etapie 3).
+                type = l.Type,
                 volume = l.Volume,
                 muted = l.Muted,
                 tracks = l.Tracks.OrderBy(t => t.Order).Select(t => new
@@ -123,7 +127,11 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                     // ReverbMix = 0 oznacza "bez efektu" — graf bypassuje convolver,
                     // koszt CPU zerowy. >0 wpina sample do współdzielonego
                     // ConvolverNode-a warstwy (Hall IR).
-                    reverbMix = t.ReverbMix
+                    reverbMix = t.ReverbMix,
+                    // null = sekwencyjny (gra wg Order); int = time-anchored
+                    // (silnik użyje setTimeout z (startAtMs - startFromMs) jako
+                    // delay, w trigger-ze odpali overlay <audio>).
+                    startAtMs = t.StartAtMs
                 }).ToArray()
             }).ToArray();
 
