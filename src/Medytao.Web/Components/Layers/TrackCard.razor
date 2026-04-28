@@ -5,7 +5,16 @@
 <div class="track-card @(_expanded ? "expanded" : "") @(IsCurrent ? "current" : "")">
     <!-- Main row -->
     <div class="track-row" @onclick="ToggleExpand">
-        <span class="drag-handle" @onclick:stopPropagation="true">⠿</span>
+        @* draggable=true tylko na uchwycie — to jedyny element, z którego
+           startuje reorder. Dzięki temu mousedown na suwakach/inputach nie
+           bąbla do żadnego draggable rodzica i kontrolki działają normalnie.
+           dragstart/dragend lecą do parenta (LayerPanel) przez callbacki. *@
+        <span class="drag-handle"
+              draggable="true"
+              @onclick:stopPropagation="true"
+              @ondragstart="@(async () => await OnDragStartFromHandle.InvokeAsync())"
+              @ondragend="@(async () => await OnDragEndFromHandle.InvokeAsync())"
+              title="Drag to reorder">⠿</span>
 
         <AudioPreviewButton Url="@Track.Asset.Url" Volume="_volume" PlaybackRate="_playbackRate" ReverbMix="_reverbMix" />
 
@@ -23,12 +32,7 @@
             }
         </div>
 
-        @* stopPropagation na mousedown jest niezbędne, gdy rodzicielski wrapper
-           ma draggable=true (zob. LayerPanel → track-drag-wrap). Bez tego
-           browser inicjuje drag tracka jeszcze zanim <input type="range">
-           zdąży obsłużyć mousedown — i suwak zamiast zmieniać wartość zaczyna
-           ciągnąć cały panel. To samo dotyczy track-detail w expanded panelu. *@
-        <div class="track-quick-controls" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+        <div class="track-quick-controls" @onclick:stopPropagation="true">
             <input type="range" min="0" max="1" step="0.01"
                    value="@_volume.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                    @oninput="e => OnVolumeInput(float.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
@@ -63,10 +67,7 @@
     <!-- Expanded controls -->
     @if (_expanded)
     {
-        @* stopPropagation analogiczny do track-quick-controls — Speed/Reverb
-           slidery i fade-inputy w trybie rozwiniętym muszą przejmować mousedown,
-           inaczej draggable rodzic wyrwałby drag zanim <input> zdąży zareagować. *@
-        <div class="track-detail" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+        <div class="track-detail">
             <div class="detail-row">
                 <span class="detail-label">Fade in</span>
                 <input type="number" min="0" step="100" @bind="_fadeInMs" class="ms-input" /> ms
@@ -151,6 +152,19 @@
     [Parameter] public bool IsCurrent { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public EventCallback OnRemove { get; set; }
+
+    /// <summary>
+    /// Wywoływane gdy user rozpoczyna drag chwytając za uchwyt ⠿. Parent
+    /// (LayerPanel) używa tego do oznaczenia tego tracka jako source dragu
+    /// i przygotowania snapshotu kolejności do live-preview.
+    /// </summary>
+    [Parameter] public EventCallback OnDragStartFromHandle { get; set; }
+
+    /// <summary>
+    /// Wywoływane na zakończenie drag-u (drop poza listą lub anulowanie).
+    /// Parent czyści wewnętrzny stan dragu.
+    /// </summary>
+    [Parameter] public EventCallback OnDragEndFromHandle { get; set; }
 
     private bool _expanded;
     private float _volume;
@@ -334,7 +348,19 @@
     }
     .track-row:hover { background: var(--color-background-secondary); }
 
-    .drag-handle { color: var(--color-text-tertiary); cursor: grab; font-size: 14px; }
+    .drag-handle {
+        color: var(--color-text-tertiary);
+        cursor: grab;
+        font-size: 14px;
+        /* Większy hit-target niż sam glyph ⠿ — łatwiej trafić myszką, plus
+           subtelne tło na hover sygnalizuje, że to interaktywny element. */
+        padding: 2px 4px;
+        border-radius: 4px;
+        user-select: none;
+        transition: background 0.1s, color 0.1s;
+    }
+    .drag-handle:hover { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+    .drag-handle:active { cursor: grabbing; }
 
     .track-info { flex: 1; min-width: 0; }
     .track-filename { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
