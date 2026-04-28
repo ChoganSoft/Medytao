@@ -71,11 +71,14 @@
                 var track = ordered[i];
                 var blocks = track.LoopCount == 0 && i < lastIndex;
                 var trackIdLocal = track.Id; // closure capture per iterację
+                @* Wrapper jest TYLKO drop-target (nasłuchuje dragover/drop).
+                   draggable=true musi siedzieć na samym uchwycie ⠿ wewnątrz
+                   TrackCard, inaczej HTML5 drag startuje przy mousedown na
+                   dowolnym dziecku — w tym suwakach. Stop propagation na
+                   mousedown nie pomaga, bo dragstart to odrębny mechanizm
+                   browsera, niezależny od mouse events. *@
                 <div class="track-drag-wrap @(_draggingId == trackIdLocal ? "dragging" : "")"
                      @key="trackIdLocal"
-                     draggable="true"
-                     @ondragstart="@(() => OnDragStart(trackIdLocal))"
-                     @ondragend="OnDragEnd"
                      @ondragover:preventDefault="true"
                      @ondragover="@(e => OnDragOver(e, trackIdLocal))"
                      @ondrop="OnDrop"
@@ -86,6 +89,8 @@
                         LayerType="@Layer.Type"
                         BlocksSequence="blocks"
                         IsCurrent="@(progress is not null && !progress.Finished && progress.TrackIndex == i)"
+                        OnDragStartFromHandle="@(() => OnDragStart(trackIdLocal))"
+                        OnDragEndFromHandle="OnDragEnd"
                         OnChanged="OnLayerChanged"
                         OnRemove="OnLayerChanged" />
                 </div>
