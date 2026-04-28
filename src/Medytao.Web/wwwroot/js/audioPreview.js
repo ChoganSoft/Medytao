@@ -742,14 +742,26 @@ window.meditationPlayer = window.medytaoAudio;
         });
     }
 
-    async function ensureDurations(layers) {
+    // dotNetRef — DotNetObjectReference do PlaybackSessionService. Po pobraniu
+    // metadanych raportujemy z powrotem do C# (ReportTrackDuration), żeby UI
+    // mogło aktualizować skalę timeline-a. Bez tego suwak miałby skalę liczoną
+    // tylko ze StartAtMs+ogon, niedoszacowaną o faktyczną długość audio.
+    async function ensureDurations(layers, dotNetRef) {
         const promises = [];
         for (const l of (layers || [])) {
             for (const t of (l.tracks || [])) {
                 if (typeof t.durationMs === 'number' && t.durationMs > 0) continue;
                 promises.push(
                     fetchDurationFor(t).then(ms => {
-                        if (ms) t.durationMs = ms;
+                        if (!ms) return;
+                        t.durationMs = ms;
+                        if (dotNetRef) {
+                            try {
+                                dotNetRef.invokeMethodAsync('ReportTrackDuration', t.trackId, ms);
+                            } catch (e) {
+                                console.warn('[medytaoPlayer] ReportTrackDuration failed', e);
+                            }
+                        }
                     })
                 );
             }
@@ -766,12 +778,13 @@ window.meditationPlayer = window.medytaoAudio;
         // znajdujemy track, który grałby w tym momencie, ustawiamy jego
         // currentTime na offset wewnątrz, doliczamy ile pętli już się odbyło.
         // Pozwala seekować bez konieczności słuchania wszystkiego od zera.
-        async startSession(layers, startFromMs) {
+        async startSession(layers, startFromMs, dotNetRef) {
             // Pobierz brakujące metadane PRZED zbudowaniem grafu warstw —
             // applyFastForward i scheduleAnchoredTracks polegają na
             // track.durationMs przy seeku, więc bez tego seek by zawsze
-            // wracał do fallback "od zera".
-            await ensureDurations(layers);
+            // wracał do fallback "od zera". dotNetRef pozwala raportować
+            // zwrotnie do C# żeby UI też wiedział o świeżych durations.
+            await ensureDurations(layers, dotNetRef);
 
             const sessionId = newSessionId();
             const seekMs = (typeof startFromMs === 'number' && startFromMs > 0) ? startFromMs : 0;
