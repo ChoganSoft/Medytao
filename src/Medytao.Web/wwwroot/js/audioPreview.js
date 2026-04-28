@@ -343,6 +343,61 @@ window.meditationPlayer = window.medytaoAudio;
         return Math.max(0, Math.min(1, v));
     }
 
+    // Przelicza index/playsLeft/startOffsetMs warstwy dla pozycji master-clocka
+    // (seekMs ms od początku medytacji). Iteruje po sekwencji tracków
+    // i odejmuje ich łączny czas, aż trafi na ten, w którym znajduje się seek.
+    //
+    // Zasady semantyczne (zgodne z onTrackEnded):
+    //   - loopCount == 0  → loop forever, blokuje kolejne tracki w warstwie.
+    //                        Track gra "wiecznie", offset = seekMs % duration.
+    //   - loopCount == N  → track gra N razy, łącznie N*duration ms.
+    //                        Po wyczerpaniu lecimy do następnego.
+    //   - track bez znanego durationMs (asset bez metadanych) → traktujemy
+    //     jako 0-długości, czyli "skończony" → przeskakujemy. Bez tego
+    //     fast-forward by się zawiesił na wiecznym 0.
+    function applyFastForward(state, seekMs) {
+        let remaining = Math.max(0, seekMs);
+        for (let i = 0; i < state.tracks.length; i++) {
+            const t = state.tracks[i];
+            const dMs = (typeof t.durationMs === 'number' && t.durationMs > 0) ? t.durationMs : 0;
+
+            if (t.loopCount === 0) {
+                // Wieczna pętla — zatrzymujemy się na tym tracku.
+                state.index = i;
+                state.startOffsetMs = dMs > 0 ? (remaining % dMs) : 0;
+                state.playsLeft = 1; // patrz komentarz przy normal-start; ended-handler i tak loopuje
+                return;
+            }
+
+            const loops = Math.max(1, t.loopCount || 1);
+            const totalMs = dMs * loops;
+
+            if (dMs === 0) {
+                // Brak metadanych — pomiń track w fast-forward, ale zostaw
+                // playsLeft = loops żeby normalnie zagrał gdy do niego dojdziemy.
+                continue;
+            }
+
+            if (remaining < totalMs) {
+                // Seek wpada w ten track. Liczymy ile pętli już się odbyło
+                // i ile zostało, plus offset wewnątrz aktualnej pętli.
+                const playedLoops = Math.floor(remaining / dMs);
+                state.index = i;
+                state.startOffsetMs = remaining - playedLoops * dMs;
+                state.playsLeft = loops - playedLoops;
+                return;
+            }
+
+            // Seek poza tym trackiem — odejmujemy jego całkowity czas i lecimy dalej.
+            remaining -= totalMs;
+        }
+        // Seek poza końcem sekwencji warstwy — ustawiamy index "za końcem",
+        // playCurrent natychmiast wraca i layer milczy (Finished w getProgress).
+        state.index = state.tracks.length;
+        state.startOffsetMs = 0;
+        state.playsLeft = 1;
+    }
+
     function playCurrent(state) {
         const track = state.tracks[state.index];
         if (!track) return; // end of layer
@@ -351,6 +406,14 @@ window.meditationPlayer = window.medytaoAudio;
         const audio = createAudio(track.url);
         audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
         applyRate(audio, track.playbackRate);
+
+        // Jeśli weszliśmy w track po seeku, ustawiamy currentTime na offset.
+        // Ustawiamy PRZED play(), żeby pierwszy sample już leciał z właściwej
+        // pozycji. Po pierwszym użyciu zerujemy startOffsetMs — następne
+        // wywołania playCurrent w tej warstwie (kolejne tracki w sekwencji)
+        // mają zaczynać od początku.
+        const startOffsetSec = (state.startOffsetMs || 0) / 1000;
+        state.startOffsetMs = 0;
 
         audio.addEventListener('ended', () => onTrackEnded(state));
         state.audio = audio;
@@ -363,6 +426,13 @@ window.meditationPlayer = window.medytaoAudio;
             state.audioGraph = buildTrackGraph(state, audio, track.reverbMix || 0);
         } else {
             state.audioGraph = null;
+        }
+
+        // currentTime można ustawić bezpiecznie przed play() — przeglądarki
+        // akceptują nawet wartości spoza loadedmetadata (do odtworzenia
+        // dochodzą metadane, klamują do duration). Odporność: try/catch.
+        if (startOffsetSec > 0) {
+            try { audio.currentTime = startOffsetSec; } catch { /* noop */ }
         }
 
         audio.play().catch(err => console.warn('Medytao player: play failed', err));
@@ -442,38 +512,51 @@ window.meditationPlayer = window.medytaoAudio;
     }
 
     window.medytaoPlayer = {
-        startSession(layers) {
+        // startSession(layers, startFromMs?) — gdy startFromMs > 0, każda
+        // warstwa "fast-forwards" do tego punktu na master clocku medytacji:
+        // znajdujemy track, który grałby w tym momencie, ustawiamy jego
+        // currentTime na offset wewnątrz, doliczamy ile pętli już się odbyło.
+        // Pozwala seekować bez konieczności słuchania wszystkiego od zera.
+        startSession(layers, startFromMs) {
             const sessionId = newSessionId();
+            const seekMs = (typeof startFromMs === 'number' && startFromMs > 0) ? startFromMs : 0;
             const layerStates = (layers || [])
                 .filter(l => l && l.tracks && l.tracks.length > 0)
-                .map(l => {
-                    const firstTrack = l.tracks[0];
-                    const playsLeft = firstTrack.loopCount === 0
-                        ? 1
-                        : Math.max(1, firstTrack.loopCount || 1);
-                    return {
-                        layerId: l.id,
-                        layerVolume: l.volume,
-                        muted: !!l.muted,
-                        // Per-warstwa lazy convolver tworzony przy pierwszym track-mixie >0.
-                        convolver: null,
-                        tracks: l.tracks,
-                        index: 0,
-                        playsLeft,
-                        audio: null,
-                        audioGraph: null  // { src, dryGain, wetGain, wetConnected } per active <audio>
-                    };
-                });
+                .map(l => ({
+                    layerId: l.id,
+                    layerVolume: l.volume,
+                    muted: !!l.muted,
+                    convolver: null,
+                    tracks: l.tracks,
+                    index: 0,
+                    playsLeft: 1,
+                    startOffsetMs: 0,  // offset wewnątrz aktualnego tracka (tylko przy starcie po seek)
+                    audio: null,
+                    audioGraph: null
+                }));
+
+            // Fast-forward: dla każdej warstwy ustal index/playsLeft/startOffsetMs
+            // wg seekMs. Warstwa, w której seek wypada poza końcem sekwencji,
+            // dostaje index = tracks.length (czyli "skończona" — playCurrent
+            // od razu wróci, layer milczy).
+            for (const state of layerStates) {
+                applyFastForward(state, seekMs);
+            }
 
             sessions.set(sessionId, { layers: layerStates });
             console.debug('[medytaoPlayer] startSession', {
                 sessionId,
+                seekMs,
                 layers: layerStates.map(L => ({
                     layerId: L.layerId,
+                    index: L.index,
+                    playsLeft: L.playsLeft,
+                    startOffsetMs: L.startOffsetMs,
                     layerVolume: L.layerVolume,
                     muted: L.muted,
                     tracks: L.tracks.map(t => ({
-                        trackId: t.trackId, volume: t.volume, reverbMix: t.reverbMix, url: t.url
+                        trackId: t.trackId, volume: t.volume,
+                        durationMs: t.durationMs, reverbMix: t.reverbMix
                     }))
                 }))
             });
