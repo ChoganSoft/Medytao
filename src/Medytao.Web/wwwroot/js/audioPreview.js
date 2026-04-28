@@ -355,6 +355,18 @@ window.meditationPlayer = window.medytaoAudio;
     //   - track bez znanego durationMs (asset bez metadanych) → nie znamy
     //     skali czasu, więc nie próbujemy przewinąć. Patrz: special case-y poniżej.
     function applyFastForward(state, seekMs) {
+        // Warstwa bez sekwencyjnych tracków (wszystkie są scheduled) — applyFastForward
+        // nie ma na czym pracować. Ustawiamy "empty sequence" i wracamy. Bez tego
+        // odwołanie do state.tracks[0] poniżej rzuca TypeError, startSession
+        // łapie wyjątek przez try/catch w PlaybackSessionService i Play cicho
+        // nic nie robi — typowy objaw przy warstwie Text z samymi time-anchored fragmentami.
+        if (state.tracks.length === 0) {
+            state.index = 0;
+            state.startOffsetMs = 0;
+            state.playsLeft = 1;
+            return;
+        }
+
         const firstTrack = state.tracks[0];
         const firstPlaysLeft = firstTrack.loopCount === 0 ? 1 : Math.max(1, firstTrack.loopCount || 1);
 
