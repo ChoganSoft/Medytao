@@ -345,7 +345,10 @@
         display: flex; align-items: center; gap: 16px;
         height: 56px;
         padding: 0 24px;
-        background: var(--color-background-primary);
+        /* Chrome (top-bar + footer) ciemniejszy od tła contentu — efekt ramki
+           wokół scrollowanej części aplikacji. Definicja zmiennej w app.css
+           (osobno per motyw). */
+        background: var(--color-background-chrome);
         border-bottom: 1px solid var(--color-border-tertiary);
         flex-shrink: 0;
     }
@@ -404,7 +407,8 @@
         flex-shrink: 0;
         padding: 10px 24px;
         border-top: 1px solid var(--color-border-tertiary);
-        background: var(--color-background-primary);
+        /* Wspólny kolor z top-bar — efekt symetrycznej ramki (chrome góra/dół). */
+        background: var(--color-background-chrome);
         color: var(--color-text-tertiary);
         font-size: 12px;
         text-align: left;

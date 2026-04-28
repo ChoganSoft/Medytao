@@ -3,6 +3,11 @@
     --color-background-primary: #ffffff;
     --color-background-secondary: #f5f5f5;
     --color-background-tertiary: #ebebeb;
+    /* Chrome (top-bar + footer) — celowo CIEMNIEJSZE od tła aplikacji
+       (tertiary), żeby nagłówek i stopka oprawiały content w ramkę. Skala
+       primary→secondary→tertiary idzie od jasnego do ciemnego, chrome
+       wybija się o krok dalej. */
+    --color-background-chrome: #dcdcdc;
     --color-background-info: #e6f1fb;
     --color-background-success: #eaf3de;
     --color-background-warning: #faeeda;
@@ -34,6 +39,10 @@
     --color-background-primary: #1e1e1e;
     --color-background-secondary: #2a2a2a;
     --color-background-tertiary: #171717;
+    /* Chrome ciemniejsze od tła nawet w dark — tertiary jest już prawie czarne,
+       więc chrome schodzi do ~#0a (zauważalnie głębsza czerń, jeszcze nie 0,0,0
+       żeby nie znikał border-top stopki). */
+    --color-background-chrome: #0a0a0a;
     --color-background-info: #042c53;
     --color-background-success: #173404;
     --color-background-warning: #412402;
