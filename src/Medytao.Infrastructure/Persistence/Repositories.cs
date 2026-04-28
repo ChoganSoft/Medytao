@@ -98,6 +98,22 @@ public class TrackRepository(AppDbContext db) : ITrackRepository
         var tracks = await db.Tracks
             .Where(t => t.LayerId == layerId)
             .ToListAsync(ct);
+        if (tracks.Count == 0) return;
+
+        // Reorder w jednym batchu wybucha na unique-indeksie (LayerId, Order):
+        // gdy chcemy zamienić tracki miejscami, każdy nowo przypisywany Order
+        // chwilowo koliduje z istniejącą wartością innego wiersza, EF wykrywa
+        // cykl w grafie operacji i rzuca InvalidOperationException
+        // ("circular dependency was detected").
+        //
+        // Rozwiązanie dwufazowe: najpierw przerzucamy wszystkim Order na unikalne
+        // ujemne sentinele (-1, -2, …), zapisujemy — żaden wiersz nie ma już
+        // wartości w docelowym przedziale [0, N-1], więc faza druga (przypisanie
+        // właściwych pozycji) nie napotyka konfliktów. Finalny save zostaje
+        // w handlerze przez UoW, żeby zachować transakcyjność z resztą operacji.
+        for (var i = 0; i < tracks.Count; i++)
+            tracks[i].Order = -1 - i;
+        await db.SaveChangesAsync(ct);
 
         var orderList = orderedTrackIds.ToList();
         foreach (var track in tracks)
