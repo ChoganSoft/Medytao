@@ -343,20 +343,48 @@ window.meditationPlayer = window.medytaoAudio;
         return Math.max(0, Math.min(1, v));
     }
 
-    // Przelicza index/playsLeft/startOffsetMs warstwy dla pozycji master-clocka
-    // (seekMs ms od początku medytacji). Iteruje po sekwencji tracków
-    // i odejmuje ich łączny czas, aż trafi na ten, w którym znajduje się seek.
+    // Ustawia stan startowy warstwy dla pozycji master-clocka (seekMs ms
+    // od początku medytacji). Iteruje po sekwencji tracków i odejmuje ich
+    // łączny czas, aż trafi na ten, w którym znajduje się seek.
     //
     // Zasady semantyczne (zgodne z onTrackEnded):
     //   - loopCount == 0  → loop forever, blokuje kolejne tracki w warstwie.
     //                        Track gra "wiecznie", offset = seekMs % duration.
     //   - loopCount == N  → track gra N razy, łącznie N*duration ms.
     //                        Po wyczerpaniu lecimy do następnego.
-    //   - track bez znanego durationMs (asset bez metadanych) → traktujemy
-    //     jako 0-długości, czyli "skończony" → przeskakujemy. Bez tego
-    //     fast-forward by się zawiesił na wiecznym 0.
+    //   - track bez znanego durationMs (asset bez metadanych) → nie znamy
+    //     skali czasu, więc nie próbujemy przewinąć. Patrz: special case-y poniżej.
     function applyFastForward(state, seekMs) {
-        let remaining = Math.max(0, seekMs);
+        const firstTrack = state.tracks[0];
+        const firstPlaysLeft = firstTrack.loopCount === 0 ? 1 : Math.max(1, firstTrack.loopCount || 1);
+
+        // seekMs === 0: normalny Play od początku — bez liczenia. Pierwszy
+        // track, pełna liczba pętli, brak offsetu. To pokrywa sytuację
+        // gdy assety nie mają metadanych durationMs (typowy stan w bazie,
+        // bo upload UI dziś ich nie wysyła) — bez tego shortcutu wszystkie
+        // tracki dostają dMs=0 i fast-forward by skipował całą warstwę.
+        if (seekMs <= 0) {
+            state.index = 0;
+            state.startOffsetMs = 0;
+            state.playsLeft = firstPlaysLeft;
+            return;
+        }
+
+        // Znamy hipotetyczne pozycje w czasie tylko gdy chociaż jeden track
+        // ma durationMs. Bez metadanych seek nie ma jak policzyć offsetu —
+        // fallback: graj od początku. Suwak skoczy do 0:00 wizualnie po
+        // refrshu — drobny artefakt, ale lepszy niż cisza.
+        const anyDuration = state.tracks.some(t =>
+            typeof t.durationMs === 'number' && t.durationMs > 0);
+        if (!anyDuration) {
+            console.warn('[medytaoPlayer] seek requested but no durationMs metadata; starting from 0');
+            state.index = 0;
+            state.startOffsetMs = 0;
+            state.playsLeft = firstPlaysLeft;
+            return;
+        }
+
+        let remaining = seekMs;
         for (let i = 0; i < state.tracks.length; i++) {
             const t = state.tracks[i];
             const dMs = (typeof t.durationMs === 'number' && t.durationMs > 0) ? t.durationMs : 0;
@@ -365,34 +393,32 @@ window.meditationPlayer = window.medytaoAudio;
                 // Wieczna pętla — zatrzymujemy się na tym tracku.
                 state.index = i;
                 state.startOffsetMs = dMs > 0 ? (remaining % dMs) : 0;
-                state.playsLeft = 1; // patrz komentarz przy normal-start; ended-handler i tak loopuje
+                state.playsLeft = 1;
                 return;
             }
 
             const loops = Math.max(1, t.loopCount || 1);
-            const totalMs = dMs * loops;
 
             if (dMs === 0) {
-                // Brak metadanych — pomiń track w fast-forward, ale zostaw
-                // playsLeft = loops żeby normalnie zagrał gdy do niego dojdziemy.
+                // Track bez metadanych w środku sekwencji — nie wiemy ile zajmuje,
+                // więc nie da się stwierdzić, czy seek mieści się w nim. Pomijamy
+                // (zachowanie heurystyczne: zakładamy "0-długości") — w praktyce
+                // to edge case, bo większość warstw ma jednolitą metadanową historię.
                 continue;
             }
 
+            const totalMs = dMs * loops;
             if (remaining < totalMs) {
-                // Seek wpada w ten track. Liczymy ile pętli już się odbyło
-                // i ile zostało, plus offset wewnątrz aktualnej pętli.
                 const playedLoops = Math.floor(remaining / dMs);
                 state.index = i;
                 state.startOffsetMs = remaining - playedLoops * dMs;
                 state.playsLeft = loops - playedLoops;
                 return;
             }
-
-            // Seek poza tym trackiem — odejmujemy jego całkowity czas i lecimy dalej.
             remaining -= totalMs;
         }
-        // Seek poza końcem sekwencji warstwy — ustawiamy index "za końcem",
-        // playCurrent natychmiast wraca i layer milczy (Finished w getProgress).
+
+        // Seek poza końcem sekwencji warstwy — layer milknie.
         state.index = state.tracks.length;
         state.startOffsetMs = 0;
         state.playsLeft = 1;
