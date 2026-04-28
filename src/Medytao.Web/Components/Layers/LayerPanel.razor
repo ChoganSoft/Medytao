@@ -56,23 +56,39 @@
     }
     else
     {
-        <div class="track-list">
+        <div class="track-list" @ondragover:preventDefault="true">
             @{
-                var ordered = Layer.Tracks.OrderBy(t => t.Order).ToList();
+                @* Lokalna lista — gdy trwa drag, używamy `_orderedDuringDrag`
+                   (lokalna kopia, zmodyfikowana w OnDragOver dla live-preview
+                   nowej kolejności). Bez drag-u → bierzemy ze świeżego DTO. *@
+                var ordered = (_orderedDuringDrag is not null && _draggingId is not null)
+                    ? _orderedDuringDrag
+                    : Layer.Tracks.OrderBy(t => t.Order).ToList();
                 var lastIndex = ordered.Count - 1;
             }
             @for (var i = 0; i < ordered.Count; i++)
             {
                 var track = ordered[i];
                 var blocks = track.LoopCount == 0 && i < lastIndex;
-                <TrackCard
-                    Track="track"
-                    LayerId="Layer.Id"
-                    LayerType="@Layer.Type"
-                    BlocksSequence="blocks"
-                    IsCurrent="@(progress is not null && !progress.Finished && progress.TrackIndex == i)"
-                    OnChanged="OnLayerChanged"
-                    OnRemove="OnLayerChanged" />
+                var trackIdLocal = track.Id; // closure capture per iterację
+                <div class="track-drag-wrap @(_draggingId == trackIdLocal ? "dragging" : "")"
+                     @key="trackIdLocal"
+                     draggable="true"
+                     @ondragstart="@(() => OnDragStart(trackIdLocal))"
+                     @ondragend="OnDragEnd"
+                     @ondragover:preventDefault="true"
+                     @ondragover="@(e => OnDragOver(e, trackIdLocal))"
+                     @ondrop="OnDrop"
+                     @ondrop:preventDefault="true">
+                    <TrackCard
+                        Track="track"
+                        LayerId="Layer.Id"
+                        LayerType="@Layer.Type"
+                        BlocksSequence="blocks"
+                        IsCurrent="@(progress is not null && !progress.Finished && progress.TrackIndex == i)"
+                        OnChanged="OnLayerChanged"
+                        OnRemove="OnLayerChanged" />
+                </div>
             }
         </div>
     }
@@ -94,6 +110,16 @@
     // drag-u resetowałoby suwak do starej wartości. NaN = "jeszcze nie
     // widziane", pierwszy render zawsze inicjalizuje.
     private float _shadowVolume = float.NaN;
+
+    // Stan drag-and-drop reorderingu tracków. _draggingId = id tracka, który
+    // user przeciąga. _orderedDuringDrag = lokalna kopia listy tracków
+    // z aktualnym podglądem nowej kolejności (mutowana w OnDragOver), żeby
+    // user widział "live preview" upuszczenia jeszcze przed puszczeniem.
+    // Po dropie wartości lecą do backendu przez ReorderTracksAsync; po
+    // OnLayerChanged DTO przychodzi z bazy z prawdziwą kolejnością i czyścimy
+    // _orderedDuringDrag, żeby wrócić do "źródła prawdy" z parenta.
+    private Guid? _draggingId;
+    private List<Medytao.Shared.Models.TrackDto>? _orderedDuringDrag;
 
     protected override void OnInitialized()
     {
@@ -170,6 +196,69 @@
     public void Dispose()
     {
         PlaybackSession.OnChanged -= HandleSessionChanged;
+    }
+
+    // ── Drag & drop reordering ────────────────────────────────────────────────
+    // Start drag: zapamiętujemy id, robimy snapshot aktualnej kolejności jako
+    // bazę dla live-preview. Bez snapshotu OnDragOver musiałby ciągle czytać
+    // ze świeżego DTO, gubiąc tymczasową kolejność między tickami.
+    private void OnDragStart(Guid trackId)
+    {
+        _draggingId = trackId;
+        _orderedDuringDrag = Layer.Tracks.OrderBy(t => t.Order).ToList();
+    }
+
+    // OnDragOver: kursor jest nad jakimś track-wrapem. Mutujemy
+    // _orderedDuringDrag — re-render pokaże nową kolejność na żywo. Atrybut
+    // ondragover:preventDefault na elemencie jest niezbędny, żeby przeglądarka
+    // pozwoliła w ogóle na drop.
+    //
+    // Logika reorderingu jest zaskakująco prosta: po wyjęciu elementu na
+    // pozycji fromIdx i wstawieniu go na toIdx (oryginalnym indeksie hovered),
+    // List.Insert daje właściwy efekt w obu kierunkach drag-u — ZA hovered
+    // przy ruchu w dół, PRZED hovered przy ruchu w górę. Wynika to z tego, że
+    // przy drag-w-dół RemoveAt przesuwa hovered o 1 w lewo, więc Insert(toIdx)
+    // ląduje za nim; przy drag-w-górę indeksy >toIdx się nie ruszają.
+    private void OnDragOver(Microsoft.AspNetCore.Components.Web.DragEventArgs e, Guid hoverId)
+    {
+        if (_draggingId is null || _orderedDuringDrag is null) return;
+        if (_draggingId == hoverId) return; // hover nad samym source — nic do roboty
+
+        var list = _orderedDuringDrag;
+        var fromIdx = list.FindIndex(t => t.Id == _draggingId);
+        var toIdx = list.FindIndex(t => t.Id == hoverId);
+        if (fromIdx < 0 || toIdx < 0) return;
+
+        var item = list[fromIdx];
+        list.RemoveAt(fromIdx);
+        list.Insert(toIdx, item);
+    }
+
+    // Drop: zatwierdzamy aktualne _orderedDuringDrag jako nową kolejność —
+    // wysyłamy do backendu listę GUID-ów, refreshujemy DTO. Stan czyścimy
+    // dopiero po OnLayerChanged żeby uniknąć "skoku" wizualnego między
+    // wysłaniem a refetchem.
+    private async Task OnDrop()
+    {
+        if (_draggingId is null || _orderedDuringDrag is null)
+        {
+            ResetDragState();
+            return;
+        }
+        var orderedIds = _orderedDuringDrag.Select(t => t.Id).ToList();
+        ResetDragState();
+        await MeditationSvc.ReorderTracksAsync(Layer.Id, orderedIds);
+        await OnLayerChanged.InvokeAsync();
+    }
+
+    // DragEnd: user puścił przycisk myszy poza listą (np. nad sidebarem) lub
+    // anulował dragiem ESC. Tylko czyścimy stan, nic nie persystujemy.
+    private void OnDragEnd() => ResetDragState();
+
+    private void ResetDragState()
+    {
+        _draggingId = null;
+        _orderedDuringDrag = null;
     }
 
     // Ikony Font Awesome — dokładnie te same, co na złotym pasku karty
@@ -266,4 +355,20 @@
     }
 
     .track-list { display: flex; flex-direction: column; }
+
+    /* Wrapper drag-and-drop wokół każdego TrackCard. Element jest draggable
+       w całości (nie tylko za uchwyt ⠿) — drag-handle w TrackCard pełni rolę
+       wizualnego wskaźnika "tu można chwytać", ale technicznie cały wiersz
+       odpowiada na drag. To prostsze niż dynamiczne togglowanie atrybutu
+       draggable na mousedown handle, a w praktyce nikomu nie przeszkadza,
+       bo inputy w expanded panelu i tak mają stopPropagation na klikach. */
+    .track-drag-wrap {
+        transition: opacity 0.15s;
+    }
+    /* Element przeciągany — przygaszony, żeby user widział "to jest źródło".
+       Reszta listy zostaje nietknięta wizualnie poza tym, że pozycje
+       się zmieniają (live preview reorderingu). */
+    .track-drag-wrap.dragging {
+        opacity: 0.4;
+    }
 </style>
