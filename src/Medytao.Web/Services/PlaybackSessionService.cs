@@ -21,6 +21,19 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     private System.Timers.Timer? _progressTimer;
     private Dictionary<Guid, LayerProgress> _progressByLayer = new();
 
+    // Master clock sesji: moment, w którym sesja efektywnie wystartowała,
+    // skorygowany o startFromMs przy seeku (czyli "where ms 0 of the
+    // meditation happened in wall-clock time"). ElapsedMs = now - tego.
+    // Zapisywany dopiero po udanym medytaoPlayer.startSession, żeby zegar
+    // nie ruszał gdy JS rzucił wyjątek.
+    private DateTimeOffset? _sessionStartedAt;
+
+    // Ostatnia załadowana medytacja — potrzebna SeekAsync, który restartuje
+    // sesję z nową pozycją. Trzymamy referencję do DTO bezpośrednio (bo
+    // sesja po refetchu mogłaby już nie istnieć w tej formie); Blazor i tak
+    // disposuje service razem z całym tabem.
+    private MeditationDetailDto? _lastMeditation;
+
     public PlaybackSessionService(IJSRuntime js) => _js = js;
 
     /// <summary>Sygnalizuje zmianę stanu (start / stop / tick progressu).</summary>
@@ -39,6 +52,22 @@ public sealed class PlaybackSessionService : IAsyncDisposable
 
     public LayerProgress? GetProgress(Guid layerId) =>
         _progressByLayer.TryGetValue(layerId, out var p) ? p : null;
+
+    /// <summary>
+    /// Master-clock medytacji: ile ms minęło od pozycji "ms 0" tej sesji.
+    /// Po seeku wartość natychmiast skacze na nową pozycję, bo
+    /// _sessionStartedAt jest cofnięty o startFromMs. Zwraca 0 gdy nic
+    /// nie gra.
+    /// </summary>
+    public double ElapsedMs
+    {
+        get
+        {
+            if (_sessionStartedAt is null) return 0;
+            var ms = (DateTimeOffset.UtcNow - _sessionStartedAt.Value).TotalMilliseconds;
+            return ms < 0 ? 0 : ms;
+        }
+    }
 
     /// <summary>
     /// Zagregowany postęp całej medytacji — max(CurrentTime) i max(Duration) po warstwach.
@@ -60,10 +89,16 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         return (maxCurrent, maxDuration, allFinished);
     }
 
-    public async Task StartAsync(MeditationDetailDto meditation)
+    public async Task StartAsync(MeditationDetailDto meditation, double startFromMs = 0)
     {
         // Idempotent: jeśli coś leciało, zatrzymaj pierwsze.
         if (_sessionId is not null) await StopAsync();
+
+        if (startFromMs < 0) startFromMs = 0;
+
+        // Zapamiętujemy referencję żeby SeekAsync mógł re-startować z nową pozycją
+        // bez konieczności przeładowywania DTO przez API.
+        _lastMeditation = meditation;
 
         var layers = meditation.Layers
             .Where(l => l.Tracks.Any())
@@ -78,6 +113,10 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                     url = t.Asset.Url,
                     volume = t.Volume,
                     loopCount = t.LoopCount,
+                    // durationMs potrzebny po stronie JS dla fast-forward przy seeku —
+                    // engine musi wiedzieć ile trwa każdy track żeby znaleźć właściwy
+                    // sample na danej pozycji master clocka.
+                    durationMs = t.Asset.DurationMs ?? 0,
                     // PlaybackRate = 1.0 oznacza "graj normalnie" — JS i tak
                     // ustawia preservesPitch=true, więc dla 1.0 nie ma efektu.
                     playbackRate = t.PlaybackRate,
@@ -96,13 +135,18 @@ public sealed class PlaybackSessionService : IAsyncDisposable
 
         try
         {
-            _sessionId = await _js.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers);
+            _sessionId = await _js.InvokeAsync<string>("medytaoPlayer.startSession", (object)layers, startFromMs);
             _meditationId = meditation.Id;
+            // Cofnij _sessionStartedAt o startFromMs, żeby ElapsedMs zwracał
+            // od razu właściwą pozycję (a nie "od kliknięcia, którego user
+            // nie zrobił"). Dla normalnego Play startFromMs=0 → start = teraz.
+            _sessionStartedAt = DateTimeOffset.UtcNow.AddMilliseconds(-startFromMs);
         }
         catch (Exception ex)
         {
             _sessionId = null;
             _meditationId = null;
+            _sessionStartedAt = null;
             try { await _js.InvokeVoidAsync("console.error", "[PlaybackSession] startSession failed", ex.Message); } catch { }
             return;
         }
@@ -111,13 +155,29 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         OnChanged?.Invoke();
     }
 
+    /// <summary>
+    /// Skacze do podanej pozycji medytacji. Najprostsza implementacja:
+    /// stop + start z nowym startFromMs. Krótka cisza (~kilka ms) przy
+    /// rebuilcie grafu audio, ale zachowuje wszystkie ustawienia (volume,
+    /// reverb, rate) bo lecimy po tych samych DTO. Brak _lastMeditation
+    /// (sesja jeszcze nie startowała) = no-op.
+    /// </summary>
+    public async Task SeekAsync(double targetMs)
+    {
+        if (_lastMeditation is null) return;
+        await StartAsync(_lastMeditation, targetMs);
+    }
+
     public async Task StopAsync()
     {
         StopProgressTimer();
         var sid = _sessionId;
         _sessionId = null;
         _meditationId = null;
+        _sessionStartedAt = null;
         _progressByLayer = new();
+        // _lastMeditation świadomie zostaje — żeby user po Stop mógł znowu
+        // kliknąć Play albo seekować bez ponownego ładowania DTO.
 
         if (sid is not null)
         {

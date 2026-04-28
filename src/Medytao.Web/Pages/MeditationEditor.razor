@@ -32,6 +32,30 @@ else
             </div>
         </div>
 
+        @* Master timeline. Zegar po lewej (elapsed/total), seekbar zajmuje
+           pozostałą szerokość, drag = wizualny preview, release = faktyczny
+           seek przez PlaybackSession. Pasek widoczny zawsze gdy są tracki —
+           nawet zanim user kliknie Play, żeby mógł zobaczyć skalę czasu
+           medytacji i zaplanować future-feature time-anchored triggery. *@
+        @if (HasAnyTracks)
+        {
+            var totalMs = ComputeTotalDurationMs();
+            var displayMs = _seekDragMs ?? PlaybackSession.ElapsedMs;
+            var fillPct = totalMs > 0 ? Math.Clamp(displayMs / totalMs, 0, 1) * 100 : 0;
+            <div class="editor-timeline">
+                <span class="timeline-time">
+                    @FormatMs(displayMs) <span class="timeline-time-sep">/</span> @FormatMs(totalMs)
+                </span>
+                <input type="range" min="0" max="@totalMs.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="100"
+                       value="@displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => OnSeekDrag(double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                       @onchange="e => OnSeekRelease(double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                       class="medytao-slider timeline-slider"
+                       style="--slider-fill: @((int)fillPct)%"
+                       title="Drag to seek; release to jump audio" />
+            </div>
+        }
+
         <!-- Four layer canvas -->
         <div class="canvas-area">
             @* Kolejność wyświetlania warstw ustalona designowo: Text → Music → Nature → Fx.
@@ -84,6 +108,47 @@ else
 
     private bool HasAnyTracks =>
         _meditation is not null && _meditation.Layers.Any(l => l.Tracks.Any());
+
+    // Wartość pokazywana podczas drag-u suwaka (preview, audio nie skacze).
+    // null = brak drag-u, wyświetlamy realny PlaybackSession.ElapsedMs.
+    // Czyszczone w OnSeekRelease (gdy user puści przycisk myszy).
+    private double? _seekDragMs;
+
+    // Łączna długość medytacji liczona z warstw (max po sumie duration*loopCount
+    // każdego tracka). Meditation.DurationMs w DTO jest ustawiany ręcznie
+    // i nie aktualizuje się automatycznie po dodaniu/usunięciu tracka, więc
+    // dla seekbar polegamy na pochodnej. LoopCount=0 (loop forever) traktujemy
+    // jako "tylko jeden raz" — inaczej totalDuration byłoby nieskończone
+    // i suwak nie miałby sensu. Brak metadanych (durationMs == null) = 0.
+    private double ComputeTotalDurationMs()
+    {
+        if (_meditation is null) return 0;
+        double max = 0;
+        foreach (var layer in _meditation.Layers)
+        {
+            double sum = 0;
+            foreach (var t in layer.Tracks)
+            {
+                var d = t.Asset.DurationMs ?? 0;
+                if (d <= 0) continue;
+                var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
+                sum += d * (double)loops;
+            }
+            if (sum > max) max = sum;
+        }
+        // Sensowny minimal — pusta medytacja (np. wszystkie tracki bez metadanych)
+        // dostaje 60s skali, żeby suwak miał z czym pracować zamiast div-by-zero.
+        return max > 0 ? max : 60_000;
+    }
+
+    private static string FormatMs(double ms)
+    {
+        if (ms < 0 || double.IsNaN(ms)) ms = 0;
+        var total = (int)Math.Floor(ms / 1000);
+        var m = total / 60;
+        var s = total % 60;
+        return $"{m}:{s:00}";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -141,6 +206,33 @@ else
         }
     }
 
+    // Drag suwaka: tylko preview wizualny — nic nie ruszamy w audio,
+    // żeby przy każdym pikselu drag-u nie restartować sesji. Wartość
+    // wyświetlamy przez _seekDragMs zamiast ElapsedMs.
+    private void OnSeekDrag(double ms)
+    {
+        _seekDragMs = ms;
+    }
+
+    // Release suwaka: faktyczny seek. Gdy sesja gra → przeskocz przez
+    // SeekAsync (stop+start z nowym startFromMs). Gdy nie gra, ale mamy
+    // medytację — start od tej pozycji (intuicyjne: drag bez Play to
+    // też sygnał "graj stąd"). _seekDragMs czyścimy żeby kolejny render
+    // wracał do realnego ElapsedMs z PlaybackSession.
+    private async Task OnSeekRelease(double ms)
+    {
+        _seekDragMs = null;
+        if (_meditation is null) return;
+        if (PlaybackSession.IsPlaying)
+        {
+            await PlaybackSession.SeekAsync(ms);
+        }
+        else
+        {
+            await PlaybackSession.StartAsync(_meditation, ms);
+        }
+    }
+
     private void OpenAssetPicker(Guid layerId, string layerType)
     {
         _assetPickerLayerId = layerId;
@@ -183,6 +275,29 @@ else
         border-bottom: 1px solid var(--color-border-tertiary);
         flex-shrink: 0;
     }
+
+    /* Pasek timeline pod topbarem — zegar po lewej, slider zajmuje resztę
+       szerokości. Wizualnie subtelne tło (sekundarny), żeby nie konkurować
+       z głównym headerem ale wyraźnie odznaczał strefę "narzędzi czasu". */
+    .editor-timeline {
+        display: flex; align-items: center; gap: 16px;
+        padding: 8px 24px;
+        background: var(--color-background-secondary);
+        border-bottom: 1px solid var(--color-border-tertiary);
+        flex-shrink: 0;
+    }
+    .timeline-time {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+        font-variant-numeric: tabular-nums;
+        min-width: 92px; /* "10:00 / 10:00" mieści się stabilnie */
+        flex-shrink: 0;
+    }
+    .timeline-time-sep {
+        margin: 0 4px;
+        color: var(--color-text-tertiary);
+    }
+    .timeline-slider { flex: 1; }
 
     .back-btn {
         background: none; border: none; cursor: pointer;
