@@ -546,36 +546,74 @@ window.meditationPlayer = window.medytaoAudio;
     }
 
     // ── Time-anchored triggers ────────────────────────────────────────────────
-    // Dla każdego tracka warstwy z startAtMs ustawiamy setTimeout o opóźnieniu
-    // (startAtMs - seekFromMs). Triggery z czasem już za nami (startAt < seek)
-    // świadomie pomijamy — user przeskoczył przez ten moment, więc nie odpalamy
-    // "z opóźnieniem". Triggery dokładnie na seek (delay <= 0) odpalamy
-    // natychmiast, żeby seek dokładnie w moment startu nie tracił sample-a.
+    // Dla każdego scheduled tracka decyzja zależy od relacji jego okna
+    // [startAt, startAt+duration] i punktu seek:
+    //
+    //   1) startAt > seek          → future. setTimeout(startAt - seek).
+    //   2) startAt <= seek < end   → past-but-active. Seek wpadł w środku
+    //      odtwarzania tego tracka. Odpalamy NATYCHMIAST z offsetem
+    //      (audio.currentTime = seek - startAt), żeby brzmiał tak, jakby
+    //      sesja leciała od początku i właśnie do tego momentu doszła.
+    //   3) seek >= end             → past-and-finished. Pomijamy — track
+    //      się zakończył przed pozycją seek, nie ma czego dogonić.
+    //
+    // Bez przypadku (2) klik suwaka w środek długiego scheduled tracka
+    // dawał ciszę: future-only-handling drop'owało wszystko, sesja po
+    // chwili sama auto-stop'owała się (Finished=true), suwak skakał do 0.
     function scheduleAnchoredTracks(state, seekFromMs) {
         const seq = state.scheduledTracks || [];
         if (seq.length === 0) return;
         const isOverlayLayer = isOverlayLayerType(state.layerType);
 
-        for (const t of seq) {
-            const delay = (t.startAtMs ?? 0) - seekFromMs;
-            if (delay < 0) continue; // moment już minął przy seeku — pomijamy
-
-            // Music/Nature: na razie no-op (wsparcie crossfade dochodzi
-            // w Etapie 3). Logujemy żeby user widział że trigger został
-            // zarejestrowany ale nie wystrzelił.
-            if (!isOverlayLayer) {
+        // Music/Nature: wszystkie ignored aż do Etapu 3.
+        if (!isOverlayLayer) {
+            for (const t of seq) {
                 console.debug('[medytaoPlayer] scheduled track in non-overlay layer ignored',
                     { layerId: state.layerId, layerType: state.layerType, trackId: t.trackId, startAtMs: t.startAtMs });
-                continue;
             }
+            return;
+        }
+
+        // Past-but-active: dla warstwy interrupt (Text) liczy się tylko
+        // NAJPÓŹNIEJSZY z wciąż-grających, bo każdy następny i tak by
+        // wyciszył poprzedni. Dla overlay (Fx) odpalamy wszystkie active —
+        // jako akcenty tła nakładające się na siebie też mają sens
+        // (choć w praktyce krótkie sample-e Fx rzadko nakładają się
+        // na siebie; ten branch dotyczy edge case-ów).
+        const interruptMode = isInterruptLayerType(state.layerType);
+        const pastActive = []; // { track, offsetMs }
+        for (const t of seq) {
+            const startAt = t.startAtMs ?? 0;
+            const dur = t.durationMs || 0;
+            if (startAt > seekFromMs) continue; // future, obsługujemy poniżej
+            if (dur <= 0) continue;             // bez metadanych nie wiemy
+            const end = startAt + dur;
+            if (seekFromMs >= end) continue;    // już się skończył
+            pastActive.push({ track: t, offsetMs: seekFromMs - startAt, startAt });
+        }
+        if (interruptMode && pastActive.length > 1) {
+            // Zostaw tylko najpóźniej startujący — interrupt by i tak wyciął
+            // poprzednie, więc nie ma sensu odpalać kilku jeden po drugim.
+            pastActive.sort((a, b) => b.startAt - a.startAt);
+            pastActive.length = 1;
+        }
+        for (const pa of pastActive) {
+            triggerOverlay(state, pa.track, pa.offsetMs);
+        }
+
+        // Future triggers — schedule normalnie.
+        for (const t of seq) {
+            const startAt = t.startAtMs ?? 0;
+            const delay = startAt - seekFromMs;
+            if (delay <= 0) continue; // past — już obsłużone
 
             state.scheduledPending += 1;
             const timerId = setTimeout(
                 () => {
                     state.scheduledPending = Math.max(0, state.scheduledPending - 1);
-                    triggerOverlay(state, t);
+                    triggerOverlay(state, t, 0);
                 },
-                Math.max(0, delay)
+                delay
             );
             state.scheduledTimers.push(timerId);
         }
@@ -604,7 +642,10 @@ window.meditationPlayer = window.medytaoAudio;
     // sekwencyjnym playCurrent). PlaybackRate przez applyRate. Reverb dla
     // overlay-a obecnie pomijamy — wymaga buildTrackGraph, a w Stage 2 nie
     // chcemy komplikować.
-    function triggerOverlay(state, track) {
+    // offsetMs > 0 oznacza, że odpalamy track "w trakcie" — np. po seeku
+    // do środka scheduled fragmentu. audio.currentTime ustawiamy PRZED play()
+    // żeby pierwszy sample już leciał od właściwego miejsca.
+    function triggerOverlay(state, track, offsetMs) {
         if (isInterruptLayerType(state.layerType)) {
             // Wycisz aktualny sekwencyjny audio (jeśli leci).
             if (state.audio) {
@@ -622,9 +663,12 @@ window.meditationPlayer = window.medytaoAudio;
         audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
         applyRate(audio, track.playbackRate);
 
+        const startOffsetSec = (typeof offsetMs === 'number' && offsetMs > 0) ? offsetMs / 1000 : 0;
+        if (startOffsetSec > 0) {
+            try { audio.currentTime = startOffsetSec; } catch { /* noop */ }
+        }
+
         const onEnded = () => {
-            // Zdejmuj z listy — Stop ma już mniej do disposowania, plus zapobiega
-            // wycieku referencji. ended fires raz dla każdego play.
             const idx = state.scheduledOverlays.indexOf(audio);
             if (idx >= 0) state.scheduledOverlays.splice(idx, 1);
             disposeAudio(audio);
@@ -637,6 +681,7 @@ window.meditationPlayer = window.medytaoAudio;
         console.debug('[medytaoPlayer] overlay triggered',
             { layerId: state.layerId, layerType: state.layerType,
               trackId: track.trackId, startAtMs: track.startAtMs,
+              offsetMs: offsetMs || 0,
               interrupt: isInterruptLayerType(state.layerType) });
     }
 

@@ -28,6 +28,15 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     // nie ruszał gdy JS rzucił wyjątek.
     private DateTimeOffset? _sessionStartedAt;
 
+    // Wall-clock moment ostatniego restartu sesji (start lub seek). Auto-stop
+    // (gdy wszystkie warstwy raportują Finished) świadomie się wyciszasz przez
+    // pierwsze ~2s — chroni przed scenariuszem "user kliknął suwak poza
+    // wszystkimi triggerami, getProgress od razu zwraca Finished, sesja
+    // by się sama zabiła zanim user zdąży kliknąć Stop". W takim przypadku
+    // zegar tika dalej (sesja jest w pamięci, audio milczy), user może
+    // jeszcze przesunąć suwak gdzieś indziej.
+    private DateTimeOffset? _sessionRestartedAt;
+
     // Ostatnia załadowana medytacja — potrzebna SeekAsync, który restartuje
     // sesję z nową pozycją. Trzymamy referencję do DTO bezpośrednio (bo
     // sesja po refetchu mogłaby już nie istnieć w tej formie); Blazor i tak
@@ -149,12 +158,14 @@ public sealed class PlaybackSessionService : IAsyncDisposable
             // od razu właściwą pozycję (a nie "od kliknięcia, którego user
             // nie zrobił"). Dla normalnego Play startFromMs=0 → start = teraz.
             _sessionStartedAt = DateTimeOffset.UtcNow.AddMilliseconds(-startFromMs);
+            _sessionRestartedAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
         {
             _sessionId = null;
             _meditationId = null;
             _sessionStartedAt = null;
+            _sessionRestartedAt = null;
             try { await _js.InvokeVoidAsync("console.error", "[PlaybackSession] startSession failed", ex.Message); } catch { }
             return;
         }
@@ -183,6 +194,7 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         _sessionId = null;
         _meditationId = null;
         _sessionStartedAt = null;
+        _sessionRestartedAt = null;
         _progressByLayer = new();
         // _lastMeditation świadomie zostaje — żeby user po Stop mógł znowu
         // kliknąć Play albo seekować bez ponownego ładowania DTO.
@@ -271,7 +283,16 @@ public sealed class PlaybackSessionService : IAsyncDisposable
             // Gdy wszystkie warstwy dobiegły końca — zatrzymaj sesję samoczynnie.
             // Dzięki temu ring na karcie medytacji i w edytorze wraca do stanu spoczynku
             // bez ręcznego stopu. Sprawdzamy sid żeby nie wyścigać się z ręcznym StopAsync.
-            if (items.Length > 0 && sid == _sessionId && items.All(p => p.Finished))
+            //
+            // Guard: nie auto-stop'uj sesji w pierwszych 2s od restartu. Po seeku
+            // poza wszystkie scheduled triggery getProgress od razu zwraca
+            // Finished=true, co bez tego guard-u kasowałoby sesję natychmiast,
+            // suwak wracał do 0% i user widział "wraca do 0% i nic nie odtwarza".
+            // 2s daje też user-owi szansę na kolejny seek, jeśli kliknął w pustkę.
+            var sinceRestart = _sessionRestartedAt.HasValue
+                ? (DateTimeOffset.UtcNow - _sessionRestartedAt.Value).TotalMilliseconds
+                : double.MaxValue;
+            if (items.Length > 0 && sid == _sessionId && items.All(p => p.Finished) && sinceRestart > 2000)
             {
                 await StopAsync();
                 return;
