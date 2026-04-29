@@ -89,6 +89,8 @@
                         LayerType="@Layer.Type"
                         BlocksSequence="blocks"
                         IsCurrent="@(progress is not null && !progress.Finished && progress.TrackIndex == i)"
+                        IsExpanded="@(_expandedTrackId == trackIdLocal)"
+                        OnToggleExpand="@(() => ToggleTrackExpanded(trackIdLocal))"
                         OnDragStartFromHandle="@(() => OnDragStart(trackIdLocal))"
                         OnDragEndFromHandle="OnDragEnd"
                         OnChanged="OnLayerChanged"
@@ -125,6 +127,17 @@
     // _orderedDuringDrag, żeby wrócić do "źródła prawdy" z parenta.
     private Guid? _draggingId;
     private List<Medytao.Shared.Models.TrackDto>? _orderedDuringDrag;
+
+    // Single-expand toggle: tylko jeden TrackCard w warstwie może mieć
+    // otwarty panel parametrów. Klik na inny track zamyka poprzedni
+    // i otwiera nowy. Per-warstwa, nie per-medytacja — user może mieć
+    // jednocześnie po jednym expanded w każdej warstwie.
+    private Guid? _expandedTrackId;
+
+    private void ToggleTrackExpanded(Guid trackId)
+    {
+        _expandedTrackId = _expandedTrackId == trackId ? null : trackId;
+    }
 
     protected override void OnInitialized()
     {
