@@ -298,6 +298,12 @@
         border: 1px solid var(--color-border-tertiary);
         border-radius: 10px; overflow: hidden;
         transition: opacity 0.2s;
+        /* canvas-area to flex column z overflow-y:auto. Bez flex-shrink:0
+           dzieci były kurczone do dostępnej przestrzeni — gdy expanded
+           panel tracka rozciągał warstwę, panel zachowywał starą wysokość,
+           overflow:hidden ucinał nadwyżkę i scroll canvas-area nawet nie
+           pomagał, bo to layer-panel był wewnętrznie cropped. */
+        flex-shrink: 0;
     }
     .layer-panel.muted { opacity: 0.55; }
 
