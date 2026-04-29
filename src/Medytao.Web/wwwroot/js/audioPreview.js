@@ -243,13 +243,17 @@ window.meditationPlayer = window.medytaoAudio;
     // LayerState: { layerVolume, muted, tracks, index, playsLeft, audio }
 
     function createAudio(url) {
-        const a = new Audio(url);
+        // KRYTYCZNA kolejność: crossOrigin MUSI być ustawione PRZED src,
+        // inaczej resource jest tainted i createMediaElementSource zwraca
+        // cichy output (cały graf milczy, włącznie z reverbem). Stąd
+        // `new Audio()` bez URL, potem crossOrigin, potem dopiero src.
+        // Wcześniejsza wersja `new Audio(url)` natychmiast inicjowała
+        // request bez CORS headers — ustawienie crossOrigin po tym fakcie
+        // już niczego nie zmieniało.
+        const a = new Audio();
         a.preload = 'auto';
-        // crossOrigin trzeba ustawić ZANIM Web Audio dotknie elementu —
-        // inaczej tainted-resource odcina output grafu (cisza) na zasobach
-        // serwowanych spoza origin (np. blob storage z innym hostem). 'anonymous'
-        // = bez credentiali, działa wszędzie gdzie odpowiada CORS-em.
         a.crossOrigin = 'anonymous';
+        a.src = url;
         return a;
     }
 
@@ -462,6 +466,12 @@ window.meditationPlayer = window.medytaoAudio;
         const ctx = getAudioCtx();
         if (ctx) {
             state.audioGraph = buildTrackGraph(state, audio, track.reverbMix || 0);
+            // DIAG: usunąć po potwierdzeniu, że reverb wraca. Pokazuje czy
+            // graf został zbudowany i z jakim mix-em — gdy reverb dalej
+            // milknie mimo mix > 0, problem leży w samym Web Audio path.
+            console.debug('[medytaoPlayer] playCurrent built graph',
+                { trackId: track.trackId, reverbMix: track.reverbMix, hasGraph: !!state.audioGraph,
+                  hasConvolver: !!state.convolver });
         } else {
             state.audioGraph = null;
         }
