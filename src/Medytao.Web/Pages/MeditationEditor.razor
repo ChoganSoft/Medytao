@@ -213,6 +213,16 @@ else
 
         _meditation = await MeditationSvc.GetByIdAsync(Id);
         PlaybackSession.OnChanged += HandleSessionChanged;
+
+        // Preload metadanych durationMs zaraz po wczytaniu medytacji,
+        // żeby skala suwaka była poprawna od razu — bez czekania na
+        // pierwszy Play. Każde ReportTrackDuration emituje OnChanged,
+        // więc UI samoczynnie się przerenderuje gdy fetche się skończą.
+        // Asynchronicznie, nie blokuje renderingu strony.
+        if (_meditation is not null)
+        {
+            _ = PlaybackSession.PreloadDurationsAsync(_meditation);
+        }
     }
 
     private void HandleSessionChanged() => InvokeAsync(StateHasChanged);
@@ -280,12 +290,24 @@ else
         await MeditationSvc.AddTrackAsync(_assetPickerLayerId.Value, assetId);
         _meditation = await MeditationSvc.GetByIdAsync(Id);
         _assetPickerLayerId = null;
+        // Świeżo dodany track może mieć Asset bez metadanych — preload
+        // zaraz, żeby suwak miał właściwą skalę bez czekania na Play.
+        if (_meditation is not null)
+        {
+            _ = PlaybackSession.PreloadDurationsAsync(_meditation);
+        }
     }
 
     private async Task HandleLayerChanged()
     {
         _meditation = await MeditationSvc.GetByIdAsync(Id);
         StateHasChanged();
+        // Tracki mogły dojść/odejść/zmienić assety — preload obejmuje
+        // nowe i pomija te z już znanym duration (cache w PlaybackSession).
+        if (_meditation is not null)
+        {
+            _ = PlaybackSession.PreloadDurationsAsync(_meditation);
+        }
     }
 
     public void Dispose()

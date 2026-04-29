@@ -1026,6 +1026,31 @@ window.meditationPlayer = window.medytaoAudio;
             });
         },
 
+        // Pobiera durationMs dla podanej listy tracków bez startowania
+        // sesji. Wywoływane z editor-a zaraz po wczytaniu medytacji, żeby
+        // skala timeline-a była poprawna jeszcze przed kliknięciem Play.
+        // tracks: [{ trackId, url }]. Każdy odkryty duration leci jako
+        // ReportTrackDuration na dotNetRef → cache w PlaybackSessionService.
+        async preloadDurations(tracks, dotNetRef) {
+            if (!tracks || tracks.length === 0) return;
+            const promises = tracks
+                .filter(t => t && t.url)
+                .map(t => fetchDurationFor(t).then(ms => {
+                    if (!ms) return;
+                    if (dotNetRef) {
+                        try {
+                            dotNetRef.invokeMethodAsync('ReportTrackDuration', t.trackId, ms);
+                        } catch (e) {
+                            console.warn('[medytaoPlayer] preloadDurations report failed', e);
+                        }
+                    }
+                }));
+            if (promises.length > 0) {
+                console.debug('[medytaoPlayer] preloading durations for', promises.length, 'tracks');
+                await Promise.all(promises);
+            }
+        },
+
         // Diagnostyka — pozwala sprawdzić z konsoli, co jest w sesji.
         dump(sessionId) {
             const s = sessions.get(sessionId);
