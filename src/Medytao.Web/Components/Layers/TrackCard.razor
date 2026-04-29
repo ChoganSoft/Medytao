@@ -2,7 +2,7 @@
 @inject MeditationService MeditationSvc
 @inject PlaybackSessionService PlaybackSession
 
-<div class="track-card @(_expanded ? "expanded" : "") @(IsCurrent ? "current" : "")">
+<div class="track-card @(IsExpanded ? "expanded" : "") @(IsCurrent ? "current" : "")">
     <!-- Main row -->
     <div class="track-row" @onclick="ToggleExpand">
         @* draggable=true tylko na uchwycie — to jedyny element, z którego
@@ -61,11 +61,11 @@
         </div>
 
         <button class="remove-btn" @onclick:stopPropagation="true" @onclick="Remove" title="Remove track">×</button>
-        <span class="expand-arrow">@(_expanded ? "∧" : "∨")</span>
+        <span class="expand-arrow">@(IsExpanded ? "∧" : "∨")</span>
     </div>
 
     <!-- Expanded controls -->
-    @if (_expanded)
+    @if (IsExpanded)
     {
         <div class="track-detail">
             <div class="detail-row">
@@ -170,6 +170,22 @@
     /// Rysujemy subtelny akcent żeby było wiadomo "co teraz słyszę".
     /// </summary>
     [Parameter] public bool IsCurrent { get; set; }
+
+    /// <summary>
+    /// Czy panel parametrów (expanded detail) ma być widoczny. Stan
+    /// trzymany w parencie (LayerPanel) — toggle "tylko jeden expanded
+    /// per warstwa" wymaga centralnego sterowania.
+    /// </summary>
+    [Parameter] public bool IsExpanded { get; set; }
+
+    /// <summary>
+    /// Wywoływane gdy user kliknie w track-row (toggle) lub gdy chcemy
+    /// programmatically zamknąć panel (np. po Save changes). Parent
+    /// decyduje czy panel ma się otworzyć/zamknąć — typowo: ustawia
+    /// _expandedTrackId na ten Track.Id (otwórz) albo na null (zamknij).
+    /// </summary>
+    [Parameter] public EventCallback OnToggleExpand { get; set; }
+
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public EventCallback OnRemove { get; set; }
 
@@ -186,7 +202,6 @@
     /// </summary>
     [Parameter] public EventCallback OnDragEndFromHandle { get; set; }
 
-    private bool _expanded;
     private float _volume;
     private int _loopCount;
     private int _fadeInMs, _fadeOutMs, _startOffsetMs, _crossfadeMs;
@@ -267,7 +282,9 @@
     private static bool FloatEquals(float a, float b) =>
         !float.IsNaN(a) && !float.IsNaN(b) && Math.Abs(a - b) < 0.0001f;
 
-    private void ToggleExpand() => _expanded = !_expanded;
+    // Klik w track-row deleguje decyzję parentowi; LayerPanel toggle'uje
+    // _expandedTrackId, co wraca tu jako IsExpanded i renderuje panel.
+    private Task ToggleExpand() => OnToggleExpand.InvokeAsync();
 
     private async Task OnVolumeInput(float v)
     {
@@ -299,7 +316,9 @@
     private async Task SaveDetail()
     {
         await PersistAsync();
-        _expanded = false;
+        // Po zapisie zamykamy panel — wywołanie OnToggleExpand z IsExpanded=true
+        // przełącza parent state na null, więc kolejny render zamknie panel.
+        await OnToggleExpand.InvokeAsync();
         await OnChanged.InvokeAsync();
     }
 
