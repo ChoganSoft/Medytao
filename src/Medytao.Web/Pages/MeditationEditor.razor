@@ -121,54 +121,58 @@ else
     // Czyszczone w OnSeekRelease (gdy user puści przycisk myszy).
     private double? _seekDragMs;
 
-    // Łączna długość medytacji liczona z warstw. Dla każdego tracka bierzemy
-    // duration: najpierw z DTO (Asset.DurationMs), w razie braku z lazy-fetch
-    // cache w PlaybackSession (zaktualizowany przez ReportTrackDuration
-    // wywoływany z JS po pobraniu metadanych). Bez tego cache-u skala suwaka
-    // byłaby liczona tylko ze StartAtMs i ogon na końcu, niedoszacowana
-    // o faktyczną długość scheduled fragmentów — suwak osiągałby 100% zanim
-    // audio dojdzie do końca.
+    // Łączna długość medytacji liczona z warstw. Per-warstwa końcówkę liczymy
+    // jako max(seqEnd, scheduledEnd):
+    //   - seqEnd = suma duration*loops dla tracków BEZ StartAtMs (sequenced
+    //     grają jeden po drugim, kumulują czas).
+    //   - scheduledEnd = max(StartAtMs + duration + 10s ogona) po trackach
+    //     z StartAtMs (każdy ma swój punkt startu, nie kumulują się — track
+    //     o startAt=20s i duration=15s kończy się na 35s niezależnie od
+    //     pozostałych scheduled w tej samej warstwie).
+    // Total medytacji = max po końcówkach warstw. Minimum 60s żeby slider
+    // miał skalę dla pustej medytacji.
     //
-    // Bierzemy max po dwóch niezależnych miarach:
-    //   1. sumaryczny czas sekwencji warstwy (sum duration*loopCount),
-    //   2. najpóźniejszy StartAtMs + duration tego tracka + 10s ogona.
-    // LoopCount=0 (loop forever) liczymy jako "1 raz", inaczej totalDuration
-    // byłoby nieskończone. Minimum 60s dla pustych medytacji żeby slider
-    // miał skalę.
+    // Wcześniej layerSum sumował WSZYSTKIE tracki, w tym scheduled — co
+    // dawało zawyżoną wartość ignorującą StartAtMs. Edycja StartAtMs
+    // zmieniała scheduledEnd, ale dominujący layerSum był niezmieniony,
+    // więc max() pozostawał ten sam i timer nie aktualizował się.
+    //
+    // Duration tracka czytamy: Asset.DurationMs ?? PlaybackSession.KnownDuration
+    // (zaktualizowany przez ReportTrackDuration wywoływany z JS po lazy-fetch
+    // metadanych przy starcie sesji).
     private double ComputeTotalDurationMs()
     {
         if (_meditation is null) return 0;
-        double maxLayerDuration = 0;
-        double maxScheduledEnd = 0;
+        double maxLayerEnd = 0;
         foreach (var layer in _meditation.Layers)
         {
-            double sum = 0;
+            double seqEnd = 0;
+            double scheduledEnd = 0;
             foreach (var t in layer.Tracks)
             {
                 var d = t.Asset.DurationMs ?? PlaybackSession.KnownDuration(t.Id) ?? 0;
-                if (d > 0)
-                {
-                    var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
-                    sum += d * (double)loops;
-                }
                 if (t.StartAtMs.HasValue)
                 {
-                    // 10s ogona zamiast 60s — gdy znamy duration, nie potrzeba
-                    // dużej rezerwy; trochę przestrzeni żeby koniec sample-a
-                    // nie był równy z końcem suwaka (estetyka).
+                    // Scheduled — własny start. 10s ogona dla estetyki.
                     var endpoint = t.StartAtMs.Value + d + 10_000;
-                    if (endpoint > maxScheduledEnd) maxScheduledEnd = endpoint;
+                    if (endpoint > scheduledEnd) scheduledEnd = endpoint;
+                }
+                else if (d > 0)
+                {
+                    // Sequenced — kumulujemy.
+                    var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
+                    seqEnd += d * (double)loops;
                 }
             }
-            if (sum > maxLayerDuration) maxLayerDuration = sum;
+            var layerEnd = Math.Max(seqEnd, scheduledEnd);
+            if (layerEnd > maxLayerEnd) maxLayerEnd = layerEnd;
         }
-        var total = Math.Max(maxLayerDuration, maxScheduledEnd);
-        var result = total > 0 ? total : 60_000;
-        // DIAG: log only when value actually changes, żeby nie zalewać
-        // konsoli ticków timera (każdy wywołuje render).
+        var result = maxLayerEnd > 0 ? maxLayerEnd : 60_000;
+        // DIAG: log tylko gdy wartość się zmieniła, żeby tick timera nie
+        // zalewał konsoli (każdy wywołuje render).
         if (Math.Abs(result - _lastLoggedTotal) > 0.5)
         {
-            Console.WriteLine($"[Editor] ComputeTotalDurationMs = {result}ms (layerSum={maxLayerDuration}, scheduledEnd={maxScheduledEnd})");
+            Console.WriteLine($"[Editor] ComputeTotalDurationMs = {result}ms");
             _lastLoggedTotal = result;
         }
         return result;
