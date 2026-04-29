@@ -466,12 +466,6 @@ window.meditationPlayer = window.medytaoAudio;
         const ctx = getAudioCtx();
         if (ctx) {
             state.audioGraph = buildTrackGraph(state, audio, track.reverbMix || 0);
-            // DIAG: usunąć po potwierdzeniu, że reverb wraca. Pokazuje czy
-            // graf został zbudowany i z jakim mix-em — gdy reverb dalej
-            // milknie mimo mix > 0, problem leży w samym Web Audio path.
-            console.debug('[medytaoPlayer] playCurrent built graph',
-                { trackId: track.trackId, reverbMix: track.reverbMix, hasGraph: !!state.audioGraph,
-                  hasConvolver: !!state.convolver });
         } else {
             state.audioGraph = null;
         }
