@@ -150,16 +150,22 @@ else
             double scheduledEnd = 0;
             foreach (var t in layer.Tracks)
             {
-                var d = t.Asset.DurationMs ?? PlaybackSession.KnownDuration(t.Id) ?? 0;
+                var natural = t.Asset.DurationMs ?? PlaybackSession.KnownDuration(t.Id) ?? 0;
+                // Effective wall-clock duration = naturalna / tempo. Slider Speed
+                // (warstwa Text) ustawia rate < 1.0 (wolniej, dłużej fizycznie)
+                // lub > 1.0 (szybciej, krócej). Bez tego suwak nie pokrywałby
+                // realnego czasu odtwarzania spowolnionych fragmentów narracji.
+                var rate = t.PlaybackRate > 0 ? t.PlaybackRate : 1.0f;
+                var effective = natural / rate;
                 if (t.StartAtMs.HasValue)
                 {
-                    var endpoint = t.StartAtMs.Value + d;
+                    var endpoint = t.StartAtMs.Value + effective;
                     if (endpoint > scheduledEnd) scheduledEnd = endpoint;
                 }
-                else if (d > 0)
+                else if (effective > 0)
                 {
                     var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
-                    seqEnd += d * (double)loops;
+                    seqEnd += effective * (double)loops;
                 }
             }
             var layerEnd = Math.Max(seqEnd, scheduledEnd);
