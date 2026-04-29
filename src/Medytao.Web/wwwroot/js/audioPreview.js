@@ -675,7 +675,7 @@ window.meditationPlayer = window.medytaoAudio;
             }
             // Wycisz wszystkie wcześniejsze overlay-e tej warstwy.
             if (state.scheduledOverlays && state.scheduledOverlays.length > 0) {
-                for (const a of state.scheduledOverlays) disposeAudio(a);
+                for (const o of state.scheduledOverlays) disposeAudio(o.audio);
                 state.scheduledOverlays = [];
             }
         }
@@ -690,20 +690,33 @@ window.meditationPlayer = window.medytaoAudio;
             try { audio.currentTime = audioTimeSec; } catch { /* noop */ }
         }
 
+        // Reverb path identyczny jak dla sequenced (playCurrent) — buildTrackGraph
+        // wpina audio w MediaElementAudioSource, dryGain idzie do destination,
+        // a wetGain (gdy mix > 0) do współdzielonego layer.convolver. Bez
+        // tego scheduled tracki w Text/Fx nie miałyby reverbu nawet przy
+        // mix > 0, bo audio leciało wprost przez domyślne wyjście elementu.
+        let overlayGraph = null;
+        const ctx = getAudioCtx();
+        if (ctx) {
+            overlayGraph = buildTrackGraph(state, audio, track.reverbMix || 0);
+        }
+
         const onEnded = () => {
-            const idx = state.scheduledOverlays.indexOf(audio);
+            const idx = state.scheduledOverlays.findIndex(o => o.audio === audio);
             if (idx >= 0) state.scheduledOverlays.splice(idx, 1);
             disposeAudio(audio);
         };
         audio.addEventListener('ended', onEnded);
 
-        state.scheduledOverlays.push(audio);
+        state.scheduledOverlays.push({ trackId: track.trackId, audio, graph: overlayGraph });
         audio.play().catch(err => console.warn('Medytao player: overlay play failed', err));
 
         console.debug('[medytaoPlayer] overlay triggered',
             { layerId: state.layerId, layerType: state.layerType,
               trackId: track.trackId, startAtMs: track.startAtMs,
+              reverbMix: track.reverbMix || 0,
               offsetMs: offsetMs || 0,
+              hasGraph: !!overlayGraph,
               interrupt: isInterruptLayerType(state.layerType) });
     }
 
@@ -896,9 +909,11 @@ window.meditationPlayer = window.medytaoAudio;
                     for (const id of state.scheduledTimers) clearTimeout(id);
                     state.scheduledTimers = [];
                 }
-                // Dispose aktywnych overlay-i (te już grające).
+                // Dispose aktywnych overlay-i (te już grające). Każdy overlay
+                // to teraz {trackId, audio, graph} — disposujemy element,
+                // graf zniknie z GC gdy źródło przestaje być referencjowane.
                 if (state.scheduledOverlays) {
-                    for (const a of state.scheduledOverlays) disposeAudio(a);
+                    for (const o of state.scheduledOverlays) disposeAudio(o.audio);
                     state.scheduledOverlays = [];
                 }
             }
