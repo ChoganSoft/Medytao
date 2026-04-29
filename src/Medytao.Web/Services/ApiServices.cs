@@ -177,6 +177,13 @@ public class AssetService(HttpClient http)
 
     public Task DeleteAsync(Guid id) => http.DeleteAsync($"/api/v1/assets/{id}");
 
+    // Idempotentny "I learned the duration of this asset". Wywoływane przez
+    // PlaybackSessionService.ReportAssetDuration po lazy-fetch w JS, oraz
+    // przez upload-flow gdy auto-detect przed uploadem coś znalazł.
+    // Backend ignoruje ms<=0 i już-wpisane wartości — bezpiecznie wołać "na ślepo".
+    public Task SetDurationAsync(Guid assetId, int durationMs) =>
+        http.PatchAsJsonAsync($"/api/v1/assets/{assetId}/duration", new { durationMs });
+
     // Toggle widoczności — autor zmienia czy jego zasób jest widoczny dla
     // innych userów. Backend zwraca zaktualizowany DTO, więc UI może go
     // od razu podmienić w liście bez ponownego pobierania całości.

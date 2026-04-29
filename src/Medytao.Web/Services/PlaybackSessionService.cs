@@ -16,6 +16,7 @@ namespace Medytao.Web.Services;
 public sealed class PlaybackSessionService : IAsyncDisposable
 {
     private readonly IJSRuntime _js;
+    private readonly AssetService _assets;
     private string? _sessionId;
     private Guid? _meditationId;
     private System.Timers.Timer? _progressTimer;
@@ -44,18 +45,29 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     private MeditationDetailDto? _lastMeditation;
 
     // Cache durationMs odkrytych przez JS (lazy-fetch metadanych przy starcie
-    // sesji, bo backend ich nie zapisuje). Klucz = trackId, wartość = ms.
-    // UI używa tego jako fallback gdy Asset.DurationMs w DTO jest NULL —
-    // bez tego skala suwaka byłaby niedoszacowana i suwak osiągałby 100%
-    // zanim audio dojdzie do końca.
+    // sesji). Klucz = ASSET id (nie trackId), bo duration to property pliku
+    // a nie referencji do niego — dwa tracki używające tego samego asset-u
+    // dzielą metadane. UI używa tego jako fallback gdy Asset.DurationMs
+    // w DTO jest NULL.
     private readonly Dictionary<Guid, int> _fetchedDurations = new();
 
     // DotNetObjectReference przekazywany do JS — strona JS używa go do
-    // wywołania ReportTrackDuration po pobraniu metadanych. Trzymamy
+    // wywołania ReportAssetDuration po pobraniu metadanych. Trzymamy
     // referencję żeby ją dispose'ować przy stop/dispose service.
     private DotNetObjectReference<PlaybackSessionService>? _dotNetRef;
 
-    public PlaybackSessionService(IJSRuntime js) => _js = js;
+    // Pamięć assetId-ów już zapersistowanych do bazy w tej sesji service-a —
+    // żeby setDuration HTTP call nie strzelał wielokrotnie dla tego samego
+    // asset-u (np. ten sam asset w kilku trackach, ten sam track w wielu
+    // sesjach Play). Backend i tak ignoruje duplikaty (handler sprawdza
+    // czy duration już zapisany), ale po co generować zbędne requesty.
+    private readonly HashSet<Guid> _persistedAssets = new();
+
+    public PlaybackSessionService(IJSRuntime js, AssetService assets)
+    {
+        _js = js;
+        _assets = assets;
+    }
 
     /// <summary>Sygnalizuje zmianę stanu (start / stop / tick progressu).</summary>
     public event Action? OnChanged;
@@ -75,26 +87,46 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         _progressByLayer.TryGetValue(layerId, out var p) ? p : null;
 
     /// <summary>
-    /// Zwraca durationMs tracka odkryte przez JS w bieżącej sesji, lub null
+    /// Zwraca durationMs assetu odkryte przez JS w bieżącej sesji, lub null
     /// jeśli nie było jeszcze pobrane (albo fetch się nie udał). Używane
     /// przez UI do liczenia skali timeline-a, gdy Asset.DurationMs w DTO
-    /// jest NULL (typowy stan, bo upload nie zapisuje metadanych).
+    /// jest NULL.
     /// </summary>
-    public int? KnownDuration(Guid trackId) =>
-        _fetchedDurations.TryGetValue(trackId, out var ms) ? ms : null;
+    public int? KnownDuration(Guid assetId) =>
+        _fetchedDurations.TryGetValue(assetId, out var ms) ? ms : null;
 
     /// <summary>
-    /// Wywoływane z JS (medytaoPlayer.ensureDurations) gdy uda się pobrać
-    /// durationMs dla tracka bez metadanych. Aktualizujemy cache i emitujemy
-    /// OnChanged żeby UI mogło natychmiast przeliczyć skalę suwaka.
+    /// Wywoływane z JS (ensureDurations / preloadDurations) gdy uda się
+    /// pobrać durationMs dla assetu bez metadanych. Aktualizuje cache,
+    /// emituje OnChanged dla UI i fire-and-forget persistuje wartość
+    /// w bazie przez PATCH /assets/{id}/duration. Persist robi się tylko
+    /// raz per assetId per service-instance (kolejne raporty są no-op
+    /// dla HTTP, cache i tak idempotentny).
     /// JSInvokable musi być publiczny i instance method.
     /// </summary>
     [JSInvokable]
-    public void ReportTrackDuration(Guid trackId, int ms)
+    public void ReportAssetDuration(Guid assetId, int ms)
     {
         if (ms <= 0) return;
-        _fetchedDurations[trackId] = ms;
+        _fetchedDurations[assetId] = ms;
         OnChanged?.Invoke();
+        if (_persistedAssets.Add(assetId))
+        {
+            // Fire-and-forget: failure persistencji nie blokuje playbacku.
+            _ = SafePersistAssetDuration(assetId, ms);
+        }
+    }
+
+    private async Task SafePersistAssetDuration(Guid assetId, int ms)
+    {
+        try
+        {
+            await _assets.SetDurationAsync(assetId, ms);
+        }
+        catch (Exception ex)
+        {
+            try { await _js.InvokeVoidAsync("console.warn", "[PlaybackSession] persist duration failed", assetId, ex.Message); } catch { }
+        }
     }
 
     /// <summary>
@@ -164,13 +196,18 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                 tracks = l.Tracks.OrderBy(t => t.Order).Select(t => new
                 {
                     trackId = t.Id,
+                    // assetId potrzebne JS-owi do callback-u ReportAssetDuration
+                    // (cache po assetId — duration to fakt o pliku, nie o tracku).
+                    assetId = t.Asset.Id,
                     url = t.Asset.Url,
                     volume = t.Volume,
                     loopCount = t.LoopCount,
-                    // durationMs potrzebny po stronie JS dla fast-forward przy seeku —
-                    // engine musi wiedzieć ile trwa każdy track żeby znaleźć właściwy
-                    // sample na danej pozycji master clocka.
-                    durationMs = t.Asset.DurationMs ?? 0,
+                    // durationMs potrzebny po stronie JS dla fast-forward przy seeku.
+                    // Bierzemy z DTO, w razie braku z lokalnego cache (po lazy-fetch
+                    // lub preload). Bez tego JS musiałby refetch-ować nawet po
+                    // udanym preload, bo _lastMeditation w service-ie i tak ma
+                    // stare DTO (Asset.DurationMs=null) z OnInitializedAsync.
+                    durationMs = t.Asset.DurationMs ?? KnownDuration(t.Asset.Id) ?? 0,
                     // PlaybackRate = 1.0 oznacza "graj normalnie" — JS i tak
                     // ustawia preservesPitch=true, więc dla 1.0 nie ma efektu.
                     playbackRate = t.PlaybackRate,
@@ -245,20 +282,26 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     /// </summary>
     public async Task PreloadDurationsAsync(MeditationDetailDto meditation)
     {
-        var tracks = meditation.Layers
-            .SelectMany(l => l.Tracks)
-            .Where(t => !t.Asset.DurationMs.HasValue && !_fetchedDurations.ContainsKey(t.Id))
-            .Select(t => new { trackId = t.Id, url = t.Asset.Url })
-            .ToArray();
-        if (tracks.Length == 0) return;
+        // Deduplikujemy po assetId (kilka tracków może wskazywać ten sam asset)
+        // i pomijamy te z już znaną duration (z DTO lub z cache po assetId).
+        var seen = new HashSet<Guid>();
+        var assets = new List<object>();
+        foreach (var t in meditation.Layers.SelectMany(l => l.Tracks))
+        {
+            if (t.Asset.DurationMs.HasValue) continue;
+            if (_fetchedDurations.ContainsKey(t.Asset.Id)) continue;
+            if (!seen.Add(t.Asset.Id)) continue;
+            assets.Add(new { assetId = t.Asset.Id, url = t.Asset.Url });
+        }
+        if (assets.Count == 0) return;
 
         // Lazy-tworzenie DotNetObjectReference jeśli sesja jeszcze nie
-        // startowała. ReportTrackDuration potrzebuje go do callback-u z JS.
+        // startowała. ReportAssetDuration potrzebuje go do callback-u z JS.
         if (_dotNetRef is null) _dotNetRef = DotNetObjectReference.Create(this);
 
         try
         {
-            await _js.InvokeVoidAsync("medytaoPlayer.preloadDurations", (object)tracks, _dotNetRef);
+            await _js.InvokeVoidAsync("medytaoPlayer.preloadDurations", (object)assets, _dotNetRef);
         }
         catch (Exception ex)
         {

@@ -1,5 +1,6 @@
 @using Medytao.Shared.Models
 @inject AssetService AssetSvc
+@inject IJSRuntime JS
 
 <div class="modal-backdrop" @onclick="() => OnClose.InvokeAsync()">
     <div class="picker-modal" @onclick:stopPropagation="true">
@@ -12,7 +13,7 @@
             <input class="search-input" placeholder="Search @LayerType.ToLowerInvariant() assets…" @bind="_search" @bind:event="oninput" />
             <label class="upload-btn">
                 + Upload
-                <InputFile OnChange="HandleUpload" accept="audio/*" style="display:none" />
+                <InputFile @ref="_fileInput" OnChange="HandleUpload" accept="audio/*" style="display:none" />
             </label>
         </div>
 
@@ -65,6 +66,7 @@
     private string _search = "";
     private Guid? _selected;
     private bool _uploading;
+    private InputFile? _fileInput;
 
     private IEnumerable<AssetDto> Filtered =>
         string.IsNullOrWhiteSpace(_search)
@@ -77,12 +79,28 @@
     private async Task HandleUpload(InputFileChangeEventArgs e)
     {
         _uploading = true;
-        foreach (var file in e.GetMultipleFiles(5))
+        var files = e.GetMultipleFiles(5).ToList();
+        for (var i = 0; i < files.Count; i++)
         {
+            var file = files[i];
+            // Auto-detect duration przed uploadem (analogicznie do Assets.razor) —
+            // failsafe na null gdy JS lub format zawiedzie. Wartość trafia
+            // bezpośrednio do bazy przez upload-flow, bez round-tripa.
+            int? durationMs = null;
+            if (_fileInput is not null)
+            {
+                try
+                {
+                    var ms = await JS.InvokeAsync<int?>("medytaoUpload.readDurationMs", _fileInput.Element, i);
+                    if (ms.HasValue && ms.Value > 0) durationMs = ms.Value;
+                }
+                catch { }
+            }
+
             await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
             // Upload zawsze do bieżącej warstwy — backend tworzy odpowiednią
             // podklasę Asset (MusicAsset/NatureAsset/TextAsset/FxAsset).
-            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, LayerType);
+            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, LayerType, durationMs);
             if (result is not null) _assets.Insert(0, result);
         }
         _uploading = false;

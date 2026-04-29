@@ -75,6 +75,20 @@ public static class AssetEndpoints
             return Results.Created($"/api/v1/assets/{result.Id}", result);
         }).DisableAntiforgery();
 
+        // PATCH /assets/{id}/duration — klient zgłasza wykryte durationMs
+        // (lazy-fetch przy startSession lub auto-detect przy uploadzie).
+        // Idempotentne: handler ignoruje wartość jeśli durationMs już zapisane,
+        // dzięki czemu race między dwoma równoległymi raportami nie jest
+        // problemem. Brak auth check — zob. komentarz przy SetAssetDurationCommand.
+        group.MapPatch("/{id:guid}/duration", async (
+            Guid id,
+            SetDurationRequest body,
+            IMediator mediator) =>
+        {
+            await mediator.Send(new SetAssetDurationCommand(id, body.DurationMs));
+            return Results.NoContent();
+        });
+
         // PATCH /assets/{id}/sharing — autor zmienia widoczność swojego zasobu.
         // Body: { "isShared": true|false }. Zwraca zaktualizowany AssetDto, żeby
         // UI mogło bez refetcha podmienić wpis na liście.
@@ -98,4 +112,5 @@ public static class AssetEndpoints
     // Lokalny request DTO — body PATCH-a. Nie idzie do Shared, bo to detal
     // protokołu HTTP konkretnego endpointu, nie kontrakt domenowy.
     private record SetSharingRequest(bool IsShared);
+    private record SetDurationRequest(int DurationMs);
 }

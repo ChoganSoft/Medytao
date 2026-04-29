@@ -7,6 +7,7 @@
 @inject AssetService AssetSvc
 @inject AuthService Auth
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="page-wrap">
     <div class="page-header">
@@ -16,7 +17,7 @@
         </div>
         <label class="btn-primary">
             + Upload @_currentLayer.ToLowerInvariant()
-            <InputFile OnChange="HandleUpload" accept="@AcceptForLayer(_currentLayer)" multiple style="display:none" />
+            <InputFile @ref="_fileInput" OnChange="HandleUpload" accept="@AcceptForLayer(_currentLayer)" multiple style="display:none" />
         </label>
     </div>
 
@@ -134,15 +135,37 @@
         _loading = false;
     }
 
+    // Ref do natywnego <input type="file"> wewnątrz <InputFile>. Potrzebne JS-owi
+    // (medytaoUpload.readDurationMs) żeby dostać się do File-objektu i odczytać
+    // duration przez tymczasowe <audio>.
+    private InputFile? _fileInput;
+
     private async Task HandleUpload(InputFileChangeEventArgs e)
     {
         _uploading = true;
-        foreach (var file in e.GetMultipleFiles(10))
+        var files = e.GetMultipleFiles(10).ToList();
+        for (var i = 0; i < files.Count; i++)
         {
+            var file = files[i];
+            // Auto-detect duration PRZED uploadem — jeśli się uda, przekazujemy
+            // do API żeby Asset.DurationMs trafił do bazy od razu. Failsafe:
+            // gdy JS interop rzuci albo plik nieczytelny, ms zostaje null
+            // i flow działa jak wcześniej (preloadDurations potem dopnie wartość).
+            int? durationMs = null;
+            if (_fileInput is not null)
+            {
+                try
+                {
+                    var ms = await JS.InvokeAsync<int?>("medytaoUpload.readDurationMs", _fileInput.Element, i);
+                    if (ms.HasValue && ms.Value > 0) durationMs = ms.Value;
+                }
+                catch { /* ignorujemy — fallback do null */ }
+            }
+
             await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
             // LayerType uploadu = aktualnie otwarta strona. Backend tworzy
             // odpowiednią podklasę (MusicAsset/NatureAsset/...).
-            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, _currentLayer);
+            var result = await AssetSvc.UploadAsync(stream, file.Name, file.ContentType, _currentLayer, durationMs);
             if (result is not null) _assets.Insert(0, result);
         }
         _uploading = false;
