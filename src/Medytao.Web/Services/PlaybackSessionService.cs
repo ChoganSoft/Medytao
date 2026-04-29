@@ -228,6 +228,36 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         await StartAsync(_lastMeditation, targetMs);
     }
 
+    /// <summary>
+    /// Pobiera durationMs dla wszystkich tracków medytacji bez startowania
+    /// sesji. Wywoływane z MeditationEditor.OnInitializedAsync, żeby skala
+    /// timeline-a była poprawna od razu po wejściu na stronę — bez czekania
+    /// na pierwszy Play. Skipuje tracki, dla których duration już znamy
+    /// (Asset.DurationMs z DTO lub poprzedni cache).
+    /// </summary>
+    public async Task PreloadDurationsAsync(MeditationDetailDto meditation)
+    {
+        var tracks = meditation.Layers
+            .SelectMany(l => l.Tracks)
+            .Where(t => !t.Asset.DurationMs.HasValue && !_fetchedDurations.ContainsKey(t.Id))
+            .Select(t => new { trackId = t.Id, url = t.Asset.Url })
+            .ToArray();
+        if (tracks.Length == 0) return;
+
+        // Lazy-tworzenie DotNetObjectReference jeśli sesja jeszcze nie
+        // startowała. ReportTrackDuration potrzebuje go do callback-u z JS.
+        if (_dotNetRef is null) _dotNetRef = DotNetObjectReference.Create(this);
+
+        try
+        {
+            await _js.InvokeVoidAsync("medytaoPlayer.preloadDurations", (object)tracks, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            try { await _js.InvokeVoidAsync("console.error", "[PlaybackSession] preloadDurations failed", ex.Message); } catch { }
+        }
+    }
+
     public async Task StopAsync()
     {
         StopProgressTimer();
