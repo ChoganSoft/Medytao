@@ -46,7 +46,14 @@ else
                 <span class="timeline-time">
                     @FormatMs(displayMs) <span class="timeline-time-sep">/</span> @FormatMs(totalMs)
                 </span>
+                @* @key na inkrementującą wartość totalMs/1000 (nie na float żeby
+                   tick zegara — gdzie totalMs się nie zmienia — nie powodował
+                   re-create co render). Wymusza Blazor do dropowania starego
+                   <input> i tworzenia świeżego, gdy totalMs zmieni się na inną
+                   wartość. Bez tego diff atrybutu `max` na żywym sliderze
+                   bywał ignorowany przez przeglądarkę. *@
                 <input type="range" min="0" max="@totalMs.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="100"
+                       @key="(int)(totalMs / 1000)"
                        value="@displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture)"
                        @oninput="e => OnSeekDrag(double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                        @onchange="e => OnSeekRelease(double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
@@ -156,8 +163,17 @@ else
             if (sum > maxLayerDuration) maxLayerDuration = sum;
         }
         var total = Math.Max(maxLayerDuration, maxScheduledEnd);
-        return total > 0 ? total : 60_000;
+        var result = total > 0 ? total : 60_000;
+        // DIAG: log only when value actually changes, żeby nie zalewać
+        // konsoli ticków timera (każdy wywołuje render).
+        if (Math.Abs(result - _lastLoggedTotal) > 0.5)
+        {
+            Console.WriteLine($"[Editor] ComputeTotalDurationMs = {result}ms (layerSum={maxLayerDuration}, scheduledEnd={maxScheduledEnd})");
+            _lastLoggedTotal = result;
+        }
+        return result;
     }
+    private double _lastLoggedTotal = -1;
 
     private static string FormatMs(double ms)
     {
@@ -269,7 +285,17 @@ else
 
     private async Task HandleLayerChanged()
     {
+        // DIAG: usunąć po potwierdzeniu, że total na sliderze aktualizuje się
+        // po edycji StartAtMs. Tymczasowo loguje, żeby user mógł sprawdzić
+        // w devtools console czy event-chain TrackCard → LayerPanel →
+        // MeditationEditor faktycznie dochodzi po zmianie.
+        Console.WriteLine($"[Editor] HandleLayerChanged at {DateTimeOffset.UtcNow:HH:mm:ss.fff} — refetching meditation");
         _meditation = await MeditationSvc.GetByIdAsync(Id);
+        var startAts = _meditation?.Layers.SelectMany(l => l.Tracks)
+            .Where(t => t.StartAtMs.HasValue)
+            .Select(t => $"{t.Id.ToString()[..8]}={t.StartAtMs}")
+            ?? Enumerable.Empty<string>();
+        Console.WriteLine($"[Editor] HandleLayerChanged refetched, scheduled tracks: [{string.Join(", ", startAts)}]");
         StateHasChanged();
     }
 

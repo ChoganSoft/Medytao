@@ -369,8 +369,11 @@
     {
         var parsed = ParseMmSs(raw);
         if (parsed.HasValue) _startAtMs = parsed.Value;
+        // DIAG: usunąć po potwierdzeniu że timeline się odświeża po edit.
+        Console.WriteLine($"[TrackCard] OnStartAtMmSsChange raw='{raw}' parsed={parsed} _startAtMs={_startAtMs}, persisting then InvokeAsync");
         await PersistAsync();
         await OnChanged.InvokeAsync();
+        Console.WriteLine($"[TrackCard] OnStartAtMmSsChange chain completed");
     }
 
     // Parsuje "mm:ss" (np. "2:30" → 150000 ms). Akceptuje też samą liczbę
