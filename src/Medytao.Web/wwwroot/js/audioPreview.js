@@ -580,14 +580,21 @@ window.meditationPlayer = window.medytaoAudio;
         // jako akcenty tła nakładające się na siebie też mają sens
         // (choć w praktyce krótkie sample-e Fx rzadko nakładają się
         // na siebie; ten branch dotyczy edge case-ów).
+        //
+        // Effective duration (= natural / rate) decyduje czy track jeszcze
+        // gra w czasie ściennym. Slider Speed wolniejszy = track żyje dłużej
+        // w wall-clocku, więc past-but-active obejmuje go w szerszym oknie
+        // niż goła naturalna duration.
         const interruptMode = isInterruptLayerType(state.layerType);
-        const pastActive = []; // { track, offsetMs }
+        const pastActive = []; // { track, offsetMs, startAt }
         for (const t of seq) {
             const startAt = t.startAtMs ?? 0;
             const dur = t.durationMs || 0;
             if (startAt > seekFromMs) continue; // future, obsługujemy poniżej
             if (dur <= 0) continue;             // bez metadanych nie wiemy
-            const end = startAt + dur;
+            const rate = (typeof t.playbackRate === 'number' && t.playbackRate > 0) ? t.playbackRate : 1.0;
+            const effectiveDur = dur / rate;
+            const end = startAt + effectiveDur;
             if (seekFromMs >= end) continue;    // już się skończył
             pastActive.push({ track: t, offsetMs: seekFromMs - startAt, startAt });
         }
@@ -643,8 +650,12 @@ window.meditationPlayer = window.medytaoAudio;
     // overlay-a obecnie pomijamy — wymaga buildTrackGraph, a w Stage 2 nie
     // chcemy komplikować.
     // offsetMs > 0 oznacza, że odpalamy track "w trakcie" — np. po seeku
-    // do środka scheduled fragmentu. audio.currentTime ustawiamy PRZED play()
-    // żeby pierwszy sample już leciał od właściwego miejsca.
+    // do środka scheduled fragmentu. offsetMs to wall-clock offset (ms od
+    // startAtMs do seekMs). audio.currentTime to natomiast pozycja audio-time
+    // wewnątrz pliku — gdy gramy z playbackRate != 1, te dwie wartości się
+    // rozjeżdżają: track o duration=10s przy rate=0.5 trwa 20s wall-clock,
+    // i wall-clock-offset=5s odpowiada audio-time=2.5s. Stąd mnożenie
+    // (offsetMs / 1000) * rate.
     function triggerOverlay(state, track, offsetMs) {
         if (isInterruptLayerType(state.layerType)) {
             // Wycisz aktualny sekwencyjny audio (jeśli leci).
@@ -661,11 +672,12 @@ window.meditationPlayer = window.medytaoAudio;
 
         const audio = createAudio(track.url);
         audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
-        applyRate(audio, track.playbackRate);
+        const rate = (typeof track.playbackRate === 'number' && track.playbackRate > 0) ? track.playbackRate : 1.0;
+        applyRate(audio, rate);
 
-        const startOffsetSec = (typeof offsetMs === 'number' && offsetMs > 0) ? offsetMs / 1000 : 0;
-        if (startOffsetSec > 0) {
-            try { audio.currentTime = startOffsetSec; } catch { /* noop */ }
+        if (typeof offsetMs === 'number' && offsetMs > 0) {
+            const audioTimeSec = (offsetMs / 1000) * rate;
+            try { audio.currentTime = audioTimeSec; } catch { /* noop */ }
         }
 
         const onEnded = () => {
