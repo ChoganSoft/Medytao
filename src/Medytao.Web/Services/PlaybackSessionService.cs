@@ -181,7 +181,15 @@ public sealed class PlaybackSessionService : IAsyncDisposable
                     // null = sekwencyjny (gra wg Order); int = time-anchored
                     // (silnik użyje setTimeout z (startAtMs - startFromMs) jako
                     // delay, w trigger-ze odpali overlay <audio>).
-                    startAtMs = t.StartAtMs
+                    startAtMs = t.StartAtMs,
+                    // Fade i crossfade — silnik triggerCrossfade dla Music/Nature
+                    // używa tych wartości żeby decydować jak długo ramp-ować
+                    // volume. Bez przekazania ich do JS triggerCrossfade
+                    // fallback-ował na DEFAULT_CROSSFADE_MS niezależnie od
+                    // user settings.
+                    fadeInMs = t.FadeInMs,
+                    fadeOutMs = t.FadeOutMs,
+                    crossfadeMs = t.CrossfadeMs
                 }).ToArray()
             }).ToArray();
 
