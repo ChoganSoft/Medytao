@@ -52,13 +52,18 @@ else
                    <input> i tworzenia świeżego, gdy totalMs zmieni się na inną
                    wartość. Bez tego diff atrybutu `max` na żywym sliderze
                    bywał ignorowany przez przeglądarkę. *@
+                @* fill ze precyzją F2 (np. "23.45%") zamiast cast na int.
+                   Native thumb porusza się z pełną precyzją na podstawie
+                   atrybutu value, a fill (CSS gradient) z casted-int skakał
+                   co całe procenty — przy 60s medytacji to ~600ms na 1%,
+                   więc thumb wyprzedzał kolorowy pasek o 2-3 ticki timera. *@
                 <input type="range" min="0" max="@totalMs.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="100"
                        @key="(int)(totalMs / 1000)"
                        value="@displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture)"
                        @oninput="e => OnSeekDrag(double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                        @onchange="e => OnSeekRelease(double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                        class="medytao-slider timeline-slider"
-                       style="--slider-fill: @((int)fillPct)%"
+                       style="--slider-fill: @fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%"
                        title="Drag to seek; release to jump audio" />
             </div>
         }
