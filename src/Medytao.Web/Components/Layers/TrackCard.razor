@@ -438,8 +438,8 @@
 
     private string StartAtNoteTitle() => LayerType?.ToLowerInvariant() switch
     {
-        "music" => "Fade duration uses the track's Fade in field (default 1.5s)",
-        "nature" => "Fade duration uses the track's Fade in field (default 1.5s)",
+        "music" => "Crossfade duration uses 'Crossfade to next' (or 'Fade in' as fallback, default 1.5s)",
+        "nature" => "Crossfade duration uses 'Crossfade to next' (or 'Fade in' as fallback, default 1.5s)",
         _ => ""
     };
 

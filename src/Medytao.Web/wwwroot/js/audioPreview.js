@@ -767,9 +767,15 @@ window.meditationPlayer = window.medytaoAudio;
 
         const graph = buildTrackGraph(state, audio, track.reverbMix || 0);
 
-        const fadeMs = (typeof track.fadeInMs === 'number' && track.fadeInMs > 0)
-            ? track.fadeInMs
-            : DEFAULT_CROSSFADE_MS;
+        // Crossfade duration: priorytet "Crossfade to next" (track.crossfadeMs)
+        // bo to nazwa pola w UI najbliższa pojęciu "ile trwa przejście do
+        // tego trackca". W razie 0/undefined fallback na "Fade in" (też
+        // intuicyjny — "ile się rozpędza"), a na końcu DEFAULT_CROSSFADE_MS.
+        const fadeMs = (typeof track.crossfadeMs === 'number' && track.crossfadeMs > 0)
+            ? track.crossfadeMs
+            : (typeof track.fadeInMs === 'number' && track.fadeInMs > 0)
+                ? track.fadeInMs
+                : DEFAULT_CROSSFADE_MS;
 
         // Stary aktywny: najpierw sequenced, w razie braku — ostatni overlay
         // (poprzedni crossfade). Capture refs lokalnie, żeby setTimeout
