@@ -832,10 +832,11 @@ window.meditationPlayer = window.medytaoAudio;
         return t === 'text' || t === 'music' || t === 'nature';
     }
 
-    // Domyślny czas crossfade-u gdy track.fadeInMs == 0. 1500 ms to
-    // spokojne przejście bez wyraźnej cezury — pasuje do medytacyjnego
-    // tła. User może nadpisać przez "Fade in" w expanded panel.
-    const DEFAULT_CROSSFADE_MS = 1500;
+    // Domyślny czas crossfade-u gdy track.crossfadeMs i track.fadeInMs == 0.
+    // 3000 ms to dostatecznie długie przejście, żeby nie było wyraźnego
+    // skoku, ale nie tak długie żeby user czekał. User może nadpisać
+    // przez "Crossfade to next" (priorytet) lub "Fade in" w expanded panel.
+    const DEFAULT_CROSSFADE_MS = 3000;
 
     // Płynna zmiana audio.volume przez requestAnimationFrame. RAF
     // synchronizuje z VSync browsera, więc fade jest gładki bez
