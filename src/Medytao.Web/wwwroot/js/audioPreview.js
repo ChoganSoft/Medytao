@@ -456,11 +456,19 @@ window.meditationPlayer = window.medytaoAudio;
         for (let i = 0; i < state.tracks.length; i++) {
             const t = state.tracks[i];
             const dMs = (typeof t.durationMs === 'number' && t.durationMs > 0) ? t.durationMs : 0;
+            // Effective wall-clock duration tracka = naturalna / rate.
+            // Slider Speed (warstwa Text) wydłuża/skraca fizyczny czas
+            // odtwarzania — fast-forward musi liczyć po wall-clocku, bo seek
+            // jest zaprojektowany w master-clocku (też wall-clock).
+            const rate = (typeof t.playbackRate === 'number' && t.playbackRate > 0) ? t.playbackRate : 1.0;
+            const effectiveMs = dMs / rate;
 
             if (t.loopCount === 0) {
                 // Wieczna pętla — zatrzymujemy się na tym tracku.
+                // startOffsetMs trzymamy w wall-clocku; playCurrent przeliczy
+                // na audio-time (offsetMs * rate) przy ustawianiu currentTime.
                 state.index = i;
-                state.startOffsetMs = dMs > 0 ? (remaining % dMs) : 0;
+                state.startOffsetMs = effectiveMs > 0 ? (remaining % effectiveMs) : 0;
                 state.playsLeft = 1;
                 return;
             }
@@ -475,11 +483,11 @@ window.meditationPlayer = window.medytaoAudio;
                 continue;
             }
 
-            const totalMs = dMs * loops;
+            const totalMs = effectiveMs * loops;
             if (remaining < totalMs) {
-                const playedLoops = Math.floor(remaining / dMs);
+                const playedLoops = Math.floor(remaining / effectiveMs);
                 state.index = i;
-                state.startOffsetMs = remaining - playedLoops * dMs;
+                state.startOffsetMs = remaining - playedLoops * effectiveMs;
                 state.playsLeft = loops - playedLoops;
                 return;
             }
@@ -503,11 +511,14 @@ window.meditationPlayer = window.medytaoAudio;
 
         // Jeśli weszliśmy w track po seeku, ustawiamy currentTime na offset.
         // Ustawiamy PRZED play(), żeby pierwszy sample już leciał z właściwej
-        // pozycji. Po pierwszym użyciu zerujemy startOffsetMs — następne
-        // wywołania playCurrent w tej warstwie (kolejne tracki w sekwencji)
-        // mają zaczynać od początku.
-        const startOffsetSec = (state.startOffsetMs || 0) / 1000;
+        // pozycji. startOffsetMs jest w wall-clocku; gdy track gra z
+        // playbackRate != 1, audio-time = wall-clock * rate (track 10s przy
+        // rate=0.5 trwa 20s wall-clock, wall-clock-offset 5s = audio 2.5s).
+        // Po pierwszym użyciu zerujemy startOffsetMs.
+        const startOffsetWallMs = state.startOffsetMs || 0;
         state.startOffsetMs = 0;
+        const trackRate = (typeof track.playbackRate === 'number' && track.playbackRate > 0) ? track.playbackRate : 1.0;
+        const startOffsetSec = (startOffsetWallMs / 1000) * trackRate;
 
         audio.addEventListener('ended', () => onTrackEnded(state));
         state.audio = audio;
