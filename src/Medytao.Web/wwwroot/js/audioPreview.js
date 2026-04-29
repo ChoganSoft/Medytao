@@ -58,6 +58,51 @@ function getSharedHallIR(ctx) {
     return ir;
 }
 
+// ── Upload-time duration detection ────────────────────────────────────────────
+// Pomocnik dla Blazor InputFile: czyta File-object z natywnego <input type=file>
+// (pobranego przez ElementReference), ładuje go do temp <audio>, czeka na
+// loadedmetadata, zwraca duration w ms. Wywoływane PRZED uploadem do API,
+// żeby asset trafił do bazy z DurationMs od razu — bez round-tripa przez
+// preloadDurations w editor-ze.
+//
+// fileIndex pozwala obsłużyć multi-select (InputFile w Assets.razor pozwala
+// na 10 plików naraz). Zwraca null gdy file nie istnieje, format nieczytelny
+// albo timeout 5s.
+window.medytaoUpload = {
+    async readDurationMs(inputEl, fileIndex) {
+        if (!inputEl || !inputEl.files) return null;
+        const idx = (typeof fileIndex === 'number') ? fileIndex : 0;
+        const file = inputEl.files[idx];
+        if (!file) return null;
+
+        const url = URL.createObjectURL(file);
+        const audio = new Audio();
+        audio.preload = 'metadata';
+        audio.src = url;
+
+        return new Promise(resolve => {
+            const cleanup = () => {
+                try { URL.revokeObjectURL(url); } catch { }
+                try { audio.src = ''; } catch { }
+            };
+            const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000);
+            audio.addEventListener('loadedmetadata', () => {
+                clearTimeout(timer);
+                const ms = isFinite(audio.duration) && audio.duration > 0
+                    ? Math.round(audio.duration * 1000)
+                    : null;
+                cleanup();
+                resolve(ms);
+            });
+            audio.addEventListener('error', () => {
+                clearTimeout(timer);
+                cleanup();
+                resolve(null);
+            });
+        });
+    }
+};
+
 // preservesPitch: spec-y wszystkich obecnych przeglądarek (Chrome/Edge/Firefox/Safari)
 // już dawno wspierają standardową nazwę. Stary `mozPreservesPitch`/`webkitPreservesPitch`
 // ustawiamy z czysto defensywnych powodów — koszt zerowy, a chroni przed dziwnymi WebView.
@@ -919,31 +964,48 @@ window.meditationPlayer = window.medytaoAudio;
     }
 
     // dotNetRef — DotNetObjectReference do PlaybackSessionService. Po pobraniu
-    // metadanych raportujemy z powrotem do C# (ReportTrackDuration), żeby UI
-    // mogło aktualizować skalę timeline-a. Bez tego suwak miałby skalę liczoną
-    // tylko ze StartAtMs+ogon, niedoszacowaną o faktyczną długość audio.
+    // metadanych raportujemy z powrotem do C# (ReportAssetDuration po assetId,
+    // bo duration to property pliku, nie tracka). Cache w C# trzymamy po
+    // assetId, plus PATCH /assets/{id}/duration persistuje do bazy.
+    //
+    // Deduplikacja po assetId: jeden plik może być w wielu trackach (ten sam
+    // asset linkowany do kilku tracków warstwy). Po fetch propagujemy duration
+    // na wszystkie tracki tego assetu, żeby applyFastForward i scheduleAnchored
+    // miały spójne dane bez wielokrotnego fetchu.
     async function ensureDurations(layers, dotNetRef) {
-        const promises = [];
+        // Zbieramy mapowanie assetId → [track] żeby propagować ms po fetchu.
+        const tracksByAsset = new Map();
         for (const l of (layers || [])) {
             for (const t of (l.tracks || [])) {
-                if (typeof t.durationMs === 'number' && t.durationMs > 0) continue;
-                promises.push(
-                    fetchDurationFor(t).then(ms => {
-                        if (!ms) return;
-                        t.durationMs = ms;
-                        if (dotNetRef) {
-                            try {
-                                dotNetRef.invokeMethodAsync('ReportTrackDuration', t.trackId, ms);
-                            } catch (e) {
-                                console.warn('[medytaoPlayer] ReportTrackDuration failed', e);
-                            }
-                        }
-                    })
-                );
+                if (!t.assetId) continue;
+                let arr = tracksByAsset.get(t.assetId);
+                if (!arr) { arr = []; tracksByAsset.set(t.assetId, arr); }
+                arr.push(t);
             }
         }
+
+        const promises = [];
+        for (const [assetId, tracks] of tracksByAsset) {
+            // Pomiń jeśli któryś z tracków już ma duration (cache hit z C# albo
+            // DTO miało wartość) — wystarczy jeden source-of-truth dla całego asset-u.
+            if (tracks.some(t => typeof t.durationMs === 'number' && t.durationMs > 0)) continue;
+
+            promises.push(
+                fetchDurationFor(tracks[0]).then(ms => {
+                    if (!ms) return;
+                    for (const t of tracks) t.durationMs = ms;
+                    if (dotNetRef) {
+                        try {
+                            dotNetRef.invokeMethodAsync('ReportAssetDuration', assetId, ms);
+                        } catch (e) {
+                            console.warn('[medytaoPlayer] ReportAssetDuration failed', e);
+                        }
+                    }
+                })
+            );
+        }
         if (promises.length > 0) {
-            console.debug('[medytaoPlayer] fetching durations for', promises.length, 'tracks');
+            console.debug('[medytaoPlayer] fetching durations for', promises.length, 'assets');
             await Promise.all(promises);
         }
     }
@@ -1208,27 +1270,29 @@ window.meditationPlayer = window.medytaoAudio;
             });
         },
 
-        // Pobiera durationMs dla podanej listy tracków bez startowania
+        // Pobiera durationMs dla podanej listy assetów bez startowania
         // sesji. Wywoływane z editor-a zaraz po wczytaniu medytacji, żeby
         // skala timeline-a była poprawna jeszcze przed kliknięciem Play.
-        // tracks: [{ trackId, url }]. Każdy odkryty duration leci jako
-        // ReportTrackDuration na dotNetRef → cache w PlaybackSessionService.
-        async preloadDurations(tracks, dotNetRef) {
-            if (!tracks || tracks.length === 0) return;
-            const promises = tracks
-                .filter(t => t && t.url)
-                .map(t => fetchDurationFor(t).then(ms => {
+        // assets: [{ assetId, url }] (zdedupowane po assetId po stronie C#).
+        // Każda odkryta wartość leci do ReportAssetDuration → cache C# +
+        // PATCH /assets/{id}/duration → backend zapisuje, więc kolejne
+        // sesje (po refresh strony) nie wymagają już fetch-u.
+        async preloadDurations(assets, dotNetRef) {
+            if (!assets || assets.length === 0) return;
+            const promises = assets
+                .filter(a => a && a.url && a.assetId)
+                .map(a => fetchDurationFor(a).then(ms => {
                     if (!ms) return;
                     if (dotNetRef) {
                         try {
-                            dotNetRef.invokeMethodAsync('ReportTrackDuration', t.trackId, ms);
+                            dotNetRef.invokeMethodAsync('ReportAssetDuration', a.assetId, ms);
                         } catch (e) {
                             console.warn('[medytaoPlayer] preloadDurations report failed', e);
                         }
                     }
                 }));
             if (promises.length > 0) {
-                console.debug('[medytaoPlayer] preloading durations for', promises.length, 'tracks');
+                console.debug('[medytaoPlayer] preloading durations for', promises.length, 'assets');
                 await Promise.all(promises);
             }
         },

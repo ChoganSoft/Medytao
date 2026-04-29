@@ -103,6 +103,33 @@ public class SetAssetSharingHandler(IAssetRepository assetRepo, IStorageService 
     }
 }
 
+// ── Set asset duration ─────────────────────────────────────────────────────────
+// Wywoływane idempotentnie z klienta po wykryciu durationMs (lazy-fetch przy
+// starcie sesji albo auto-detect przy uploadzie). Zapisanie wartości w bazie
+// pozwala kolejnym sesjom uniknąć round-tripa przez ensureDurations — duration
+// trafia do DTO bezpośrednio. No-op jeśli wartość już ustawiona LUB jeśli nowa
+// jest <= 0 (sanity).
+//
+// Brak walidacji ownership: durationMs to fakt o pliku, nie własność. Każdy
+// kto może odtworzyć asset (np. globalne lub shared) może też wykryć jego
+// długość — nic to nie wnosi w kategorii security a oszczędza złożoności.
+public record SetAssetDurationCommand(Guid AssetId, int DurationMs) : IRequest;
+
+public class SetAssetDurationHandler(IAssetRepository assetRepo, IUnitOfWork uow)
+    : IRequestHandler<SetAssetDurationCommand>
+{
+    public async Task Handle(SetAssetDurationCommand cmd, CancellationToken ct)
+    {
+        if (cmd.DurationMs <= 0) return;
+        var asset = await assetRepo.GetByIdAsync(cmd.AssetId, ct);
+        if (asset is null) return; // gone — JS callback po refresh, nie warto rzucać
+        if (asset.DurationMs.HasValue) return; // już zapisane przez ktoś innego, nie nadpisujemy
+        asset.DurationMs = cmd.DurationMs;
+        asset.UpdatedAt = DateTimeOffset.UtcNow;
+        await uow.SaveChangesAsync(ct);
+    }
+}
+
 // ── Delete asset ───────────────────────────────────────────────────────────────
 public record DeleteAssetCommand(Guid AssetId, Guid RequesterId) : IRequest;
 

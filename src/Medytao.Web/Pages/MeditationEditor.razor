@@ -155,7 +155,7 @@ else
             double scheduledEnd = 0;
             foreach (var t in layer.Tracks)
             {
-                var natural = t.Asset.DurationMs ?? PlaybackSession.KnownDuration(t.Id) ?? 0;
+                var natural = t.Asset.DurationMs ?? PlaybackSession.KnownDuration(t.Asset.Id) ?? 0;
                 // Effective wall-clock duration = naturalna / tempo. Slider Speed
                 // (warstwa Text) ustawia rate < 1.0 (wolniej, dłużej fizycznie)
                 // lub > 1.0 (szybciej, krócej). Bez tego suwak nie pokrywałby
