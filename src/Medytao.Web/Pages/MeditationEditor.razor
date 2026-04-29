@@ -125,17 +125,17 @@ else
     // jako max(seqEnd, scheduledEnd):
     //   - seqEnd = suma duration*loops dla tracków BEZ StartAtMs (sequenced
     //     grają jeden po drugim, kumulują czas).
-    //   - scheduledEnd = max(StartAtMs + duration + 10s ogona) po trackach
-    //     z StartAtMs (każdy ma swój punkt startu, nie kumulują się — track
-    //     o startAt=20s i duration=15s kończy się na 35s niezależnie od
-    //     pozostałych scheduled w tej samej warstwie).
-    // Total medytacji = max po końcówkach warstw. Minimum 60s żeby slider
-    // miał skalę dla pustej medytacji.
+    //   - scheduledEnd = max(StartAtMs + duration) po trackach z StartAtMs
+    //     (każdy ma swój punkt startu, nie kumulują się — track o startAt=20s
+    //     i duration=15s kończy się na 35s niezależnie od pozostałych
+    //     scheduled w tej samej warstwie).
+    // Total medytacji = max po końcówkach warstw. Suwak kończy się dokładnie
+    // tam gdzie kończy się audio — bez "estetycznego ogona", bo suwak za
+    // końcem nagrania myli usera (klik tam = cisza).
     //
-    // Wcześniej layerSum sumował WSZYSTKIE tracki, w tym scheduled — co
-    // dawało zawyżoną wartość ignorującą StartAtMs. Edycja StartAtMs
-    // zmieniała scheduledEnd, ale dominujący layerSum był niezmieniony,
-    // więc max() pozostawał ten sam i timer nie aktualizował się.
+    // Minimum 60s żeby slider miał skalę dla pustej medytacji albo dla
+    // medytacji bez metadanych (gdzie wszystkie duration = 0 i jedyne
+    // wartości to StartAtMs = 0).
     //
     // Duration tracka czytamy: Asset.DurationMs ?? PlaybackSession.KnownDuration
     // (zaktualizowany przez ReportTrackDuration wywoływany z JS po lazy-fetch
@@ -153,13 +153,11 @@ else
                 var d = t.Asset.DurationMs ?? PlaybackSession.KnownDuration(t.Id) ?? 0;
                 if (t.StartAtMs.HasValue)
                 {
-                    // Scheduled — własny start. 10s ogona dla estetyki.
-                    var endpoint = t.StartAtMs.Value + d + 10_000;
+                    var endpoint = t.StartAtMs.Value + d;
                     if (endpoint > scheduledEnd) scheduledEnd = endpoint;
                 }
                 else if (d > 0)
                 {
-                    // Sequenced — kumulujemy.
                     var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
                     seqEnd += d * (double)loops;
                 }
@@ -167,17 +165,8 @@ else
             var layerEnd = Math.Max(seqEnd, scheduledEnd);
             if (layerEnd > maxLayerEnd) maxLayerEnd = layerEnd;
         }
-        var result = maxLayerEnd > 0 ? maxLayerEnd : 60_000;
-        // DIAG: log tylko gdy wartość się zmieniła, żeby tick timera nie
-        // zalewał konsoli (każdy wywołuje render).
-        if (Math.Abs(result - _lastLoggedTotal) > 0.5)
-        {
-            Console.WriteLine($"[Editor] ComputeTotalDurationMs = {result}ms");
-            _lastLoggedTotal = result;
-        }
-        return result;
+        return maxLayerEnd > 0 ? maxLayerEnd : 60_000;
     }
-    private double _lastLoggedTotal = -1;
 
     private static string FormatMs(double ms)
     {
@@ -289,17 +278,7 @@ else
 
     private async Task HandleLayerChanged()
     {
-        // DIAG: usunąć po potwierdzeniu, że total na sliderze aktualizuje się
-        // po edycji StartAtMs. Tymczasowo loguje, żeby user mógł sprawdzić
-        // w devtools console czy event-chain TrackCard → LayerPanel →
-        // MeditationEditor faktycznie dochodzi po zmianie.
-        Console.WriteLine($"[Editor] HandleLayerChanged at {DateTimeOffset.UtcNow:HH:mm:ss.fff} — refetching meditation");
         _meditation = await MeditationSvc.GetByIdAsync(Id);
-        var startAts = _meditation?.Layers.SelectMany(l => l.Tracks)
-            .Where(t => t.StartAtMs.HasValue)
-            .Select(t => $"{t.Id.ToString()[..8]}={t.StartAtMs}")
-            ?? Enumerable.Empty<string>();
-        Console.WriteLine($"[Editor] HandleLayerChanged refetched, scheduled tracks: [{string.Join(", ", startAts)}]");
         StateHasChanged();
     }
 
