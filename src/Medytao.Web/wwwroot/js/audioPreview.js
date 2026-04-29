@@ -1218,56 +1218,75 @@ window.meditationPlayer = window.medytaoAudio;
             });
         },
 
-        // Real-time tempo pojedynczego tracka. Mutujemy state.tracks żeby
-        // następne wejście playCurrent wzięło nową wartość; jeśli track akurat
-        // leci, ustawiamy playbackRate na żywo. preservesPitch zostaje on
-        // (ustawione na początku przez applyRate).
+        // Real-time tempo pojedynczego tracka. Mutuje state.tracks (sequenced)
+        // ALBO state.scheduledTracks (time-anchored). Jeśli track akurat leci
+        // jako sekwencja (state.audio i to current sequenced) — applyRate na
+        // żywo. Jeśli leci jako scheduled overlay — applyRate na overlay.audio.
+        // Inaczej tylko mutacja, następne playCurrent/triggerOverlay/Crossfade
+        // wezmą nową wartość.
         setTrackPlaybackRate(sessionId, layerId, trackId, rate) {
             const L = findLayer(sessionId, layerId);
             if (!L) {
                 console.warn('[medytaoPlayer] setTrackPlaybackRate: layer not found', { sessionId, layerId });
                 return;
             }
-            const t = L.tracks.find(x => x && eqId(x.trackId, trackId));
-            if (!t) {
+            const r = clampRate(rate);
+
+            const inSeq = L.tracks.find(x => x && eqId(x.trackId, trackId));
+            const inSched = inSeq ? null : (L.scheduledTracks ? L.scheduledTracks.find(x => x && eqId(x.trackId, trackId)) : null);
+            if (!inSeq && !inSched) {
                 console.warn('[medytaoPlayer] setTrackPlaybackRate: track not found', { layerId, trackId });
                 return;
             }
-            t.playbackRate = clampRate(rate);
+            if (inSeq) inSeq.playbackRate = r;
+            if (inSched) inSched.playbackRate = r;
+
+            // Live update na grającym audio: sequenced lub overlay z tym trackId.
             const current = L.tracks[L.index];
-            const isCurrent = current && eqId(current.trackId, trackId);
-            if (isCurrent && L.audio) applyRate(L.audio, t.playbackRate);
-            console.debug('[medytaoPlayer] setTrackPlaybackRate', {
-                layerId, trackId, rate: t.playbackRate, isCurrent
-            });
+            const isCurrentSeq = current && eqId(current.trackId, trackId);
+            if (isCurrentSeq && L.audio) applyRate(L.audio, r);
+            if (L.scheduledOverlays) {
+                for (const o of L.scheduledOverlays) {
+                    if (eqId(o.trackId, trackId) && o.audio) applyRate(o.audio, r);
+                }
+            }
+            console.debug('[medytaoPlayer] setTrackPlaybackRate', { layerId, trackId, rate: r });
         },
 
-        // Real-time wet/dry mix reverbu pojedynczego tracka. Mutujemy stan
-        // w state.tracks — następne wejście w playCurrent zobaczy nowy mix
-        // przy tworzeniu grafu. Jeśli track akurat gra, applyTrackMix
-        // zmienia gain-y w grafie audio natychmiast (bez glitchu w sygnale).
-        // Lazy connect wet path: gdy track startował z mix=0 i user pierwszy
-        // raz przesuwa suwak >0, dopiero wtedy podpinamy wetGain do convolvera.
+        // Real-time wet/dry mix reverbu pojedynczego tracka. Mutuje state
+        // (sequenced lub scheduled bucket). Jeśli track akurat gra w którymś
+        // z grafów (sequenced state.audioGraph lub overlay.graph), applyTrackMix
+        // zmienia gain-y na żywo bez glitchu. Lazy connect wet path: gdy track
+        // startował z mix=0 i user pierwszy raz przesuwa suwak >0, dopiero
+        // wtedy podpinamy wetGain do convolvera.
         setTrackReverbMix(sessionId, layerId, trackId, mix) {
             const L = findLayer(sessionId, layerId);
             if (!L) {
                 console.warn('[medytaoPlayer] setTrackReverbMix: layer not found', { sessionId, layerId });
                 return;
             }
-            const t = L.tracks.find(x => x && eqId(x.trackId, trackId));
-            if (!t) {
+            const m = clamp01(mix);
+
+            const inSeq = L.tracks.find(x => x && eqId(x.trackId, trackId));
+            const inSched = inSeq ? null : (L.scheduledTracks ? L.scheduledTracks.find(x => x && eqId(x.trackId, trackId)) : null);
+            if (!inSeq && !inSched) {
                 console.warn('[medytaoPlayer] setTrackReverbMix: track not found', { layerId, trackId });
                 return;
             }
-            t.reverbMix = clamp01(mix);
+            if (inSeq) inSeq.reverbMix = m;
+            if (inSched) inSched.reverbMix = m;
+
             const current = L.tracks[L.index];
-            const isCurrent = current && eqId(current.trackId, trackId);
-            if (isCurrent && L.audioGraph) {
-                applyTrackMix(L, L.audioGraph, t.reverbMix);
+            const isCurrentSeq = current && eqId(current.trackId, trackId);
+            if (isCurrentSeq && L.audioGraph) {
+                applyTrackMix(L, L.audioGraph, m);
             }
-            console.debug('[medytaoPlayer] setTrackReverbMix', {
-                layerId, trackId, mix: t.reverbMix, isCurrent
-            });
+            if (L.scheduledOverlays) {
+                for (const o of L.scheduledOverlays) {
+                    if (eqId(o.trackId, trackId) && o.graph) applyTrackMix(L, o.graph, m);
+                }
+            }
+            console.debug('[medytaoPlayer] setTrackReverbMix', { layerId, trackId, mix: m });
         },
 
         // Pobiera durationMs dla podanej listy assetów bez startowania
