@@ -237,6 +237,13 @@ window.meditationPlayer = window.medytaoAudio;
 //   leci, .playbackRate aplikuje się natychmiast; jeśli nie, wartość zostaje zapamiętana.
 // setTrackReverbMix(sessionId, layerId, trackId, mix) — zmienia wet/dry mix reverbu tracka.
 //   Pierwsza wartość >0 w warstwie buduje współdzielony ConvolverNode warstwy (lazy).
+//
+// Time-anchored triggery (track ze StartAtMs):
+//   Text   → interrupt: nowy fragment hard-cut wycina poprzedni audio w warstwie.
+//   Fx     → overlay: nowy akcent gra równolegle do tego, co już leci.
+//   Music  → crossfade: stary fade-out, nowy fade-in (czas z track.fadeInMs lub
+//            DEFAULT_CROSSFADE_MS = 1500).
+//   Nature → jak Music.
 
 (function () {
     const sessions = new Map(); // sessionId → { layers: [LayerState] }
@@ -608,8 +615,14 @@ window.meditationPlayer = window.medytaoAudio;
             pastActive.sort((a, b) => b.startAt - a.startAt);
             pastActive.length = 1;
         }
+
+        // Music/Nature → triggerCrossfade (fade-out poprzedniego, fade-in nowego).
+        // Text/Fx → triggerOverlay (Text z hard-cut, Fx jako pure overlay).
+        const isCrossfadeLayer = isCrossfadeLayerType(state.layerType);
+        const triggerFn = isCrossfadeLayer ? triggerCrossfade : triggerOverlay;
+
         for (const pa of pastActive) {
-            triggerOverlay(state, pa.track, pa.offsetMs);
+            triggerFn(state, pa.track, pa.offsetMs);
         }
 
         // Future triggers — schedule normalnie.
@@ -622,7 +635,7 @@ window.meditationPlayer = window.medytaoAudio;
             const timerId = setTimeout(
                 () => {
                     state.scheduledPending = Math.max(0, state.scheduledPending - 1);
-                    triggerOverlay(state, t, 0);
+                    triggerFn(state, t, 0);
                 },
                 delay
             );
@@ -632,11 +645,21 @@ window.meditationPlayer = window.medytaoAudio;
 
     function isOverlayLayerType(layerType) {
         // Case-insensitive — backend zwraca canonical case z enuma
-        // (Text/Music/Nature/Fx), ale jak kiedyś przyjdzie "text"/"TEXT"
-        // też zadziała. Music/Nature wpadną w false → trigger ignored.
+        // (Text/Music/Nature/Fx). Overlay = "graj scheduled niezależnie od
+        // istniejącego audio w warstwie". Crossfade-mode warstwy też tu
+        // wpadają jako true bo i one wymagają trigger-u — różnica jest
+        // dalej w kodzie wyboru funkcji trigger (overlay vs crossfade).
         if (!layerType) return false;
         const t = String(layerType).toLowerCase();
-        return t === 'text' || t === 'fx';
+        return t === 'text' || t === 'fx' || t === 'music' || t === 'nature';
+    }
+
+    // Music i Nature: scheduled track wycina aktualne tło z fade-em.
+    // Text: też wycina, ale bez fade-u (interrupt). Fx: overlay (żaden cut).
+    function isCrossfadeLayerType(layerType) {
+        if (!layerType) return false;
+        const t = String(layerType).toLowerCase();
+        return t === 'music' || t === 'nature';
     }
 
     // Trigger time-anchored tracka w warstwie typu overlay (Text/Fx).
@@ -714,12 +737,129 @@ window.meditationPlayer = window.medytaoAudio;
               interrupt: isInterruptLayerType(state.layerType) });
     }
 
-    // Interrupt = "nowy track wycisza poprzedni w warstwie". Dziś tylko Text;
-    // w przyszłości może warstwa Music/Nature dostanie wariant interrupt
-    // bez crossfade-u (bo crossfade należy do Stage 3 i wymaga gain-rampu).
+    // Trigger time-anchored tracka w warstwie crossfade (Music/Nature).
+    // Aktualnie grający track w warstwie (sequenced state.audio lub ostatni
+    // overlay z poprzedniego crossfade) — fade-out. Nowy track — fade-in.
+    // Czas fade-u: track.fadeInMs jeśli >0, inaczej DEFAULT_CROSSFADE_MS.
+    //
+    // Sequenced sequence po fade-out NIE wraca — state.audio = null oznacza
+    // koniec sekwencji w tej warstwie. Po końcu nowego time-anchored
+    // (jego ended event) → cisza w warstwie aż do następnego crossfade.
+    //
+    // Bez AudioContextu (sytuacja awaryjna): fallback do triggerOverlay,
+    // hard-cut bez fade-u — i tak jest to lepsze niż brak triggera.
+    function triggerCrossfade(state, track, offsetMs) {
+        const ctx = getAudioCtx();
+        if (!ctx) {
+            triggerOverlay(state, track, offsetMs);
+            return;
+        }
+
+        const audio = createAudio(track.url);
+        const targetVol = effectiveVolume(state.layerVolume, track.volume, state.muted);
+        const rate = (typeof track.playbackRate === 'number' && track.playbackRate > 0) ? track.playbackRate : 1.0;
+        applyRate(audio, rate);
+
+        if (typeof offsetMs === 'number' && offsetMs > 0) {
+            const audioTimeSec = (offsetMs / 1000) * rate;
+            try { audio.currentTime = audioTimeSec; } catch { /* noop */ }
+        }
+
+        const graph = buildTrackGraph(state, audio, track.reverbMix || 0);
+
+        const fadeMs = (typeof track.fadeInMs === 'number' && track.fadeInMs > 0)
+            ? track.fadeInMs
+            : DEFAULT_CROSSFADE_MS;
+
+        // Stary aktywny: najpierw sequenced, w razie braku — ostatni overlay
+        // (poprzedni crossfade). Capture refs lokalnie, żeby setTimeout
+        // closure nie czytał state.audio po zmianie.
+        const oldSequenced = state.audio;
+        const oldOverlay = (!oldSequenced && state.scheduledOverlays.length > 0)
+            ? state.scheduledOverlays[state.scheduledOverlays.length - 1]
+            : null;
+        const oldAudio = oldSequenced || (oldOverlay && oldOverlay.audio);
+
+        if (oldAudio) {
+            const startVol = oldAudio.volume;
+            fadeAudio(oldAudio, startVol, 0, fadeMs, () => {
+                disposeAudio(oldAudio);
+                if (oldSequenced && state.audio === oldSequenced) {
+                    state.audio = null;
+                }
+                if (oldOverlay) {
+                    const idx = state.scheduledOverlays.indexOf(oldOverlay);
+                    if (idx >= 0) state.scheduledOverlays.splice(idx, 1);
+                }
+            });
+        }
+
+        // Nowy fade-in: zaczyna od 0, ramp do targetVol.
+        audio.volume = 0;
+
+        const onEnded = () => {
+            const idx = state.scheduledOverlays.findIndex(o => o.audio === audio);
+            if (idx >= 0) state.scheduledOverlays.splice(idx, 1);
+            disposeAudio(audio);
+        };
+        audio.addEventListener('ended', onEnded);
+
+        state.scheduledOverlays.push({ trackId: track.trackId, audio, graph });
+        audio.play().catch(err => console.warn('Medytao player: crossfade play failed', err));
+        fadeAudio(audio, 0, targetVol, fadeMs);
+
+        console.debug('[medytaoPlayer] crossfade triggered',
+            { layerId: state.layerId, layerType: state.layerType,
+              trackId: track.trackId, startAtMs: track.startAtMs,
+              fadeMs, offsetMs: offsetMs || 0,
+              hasGraph: !!graph,
+              fadingOut: !!oldAudio });
+    }
+
+    // Interrupt = "nowy track wycisza poprzedni w warstwie". Text wycina
+    // twardo (bez fade-u), Music/Nature przez crossfade. Wszystkie trzy
+    // share-ują logikę "tylko najpóźniejszy past-but-active jest aktywny
+    // po seeku" — bo poprzednie i tak by zostały ucięte przez kolejne triggery.
     function isInterruptLayerType(layerType) {
         if (!layerType) return false;
-        return String(layerType).toLowerCase() === 'text';
+        const t = String(layerType).toLowerCase();
+        return t === 'text' || t === 'music' || t === 'nature';
+    }
+
+    // Domyślny czas crossfade-u gdy track.fadeInMs == 0. 1500 ms to
+    // spokojne przejście bez wyraźnej cezury — pasuje do medytacyjnego
+    // tła. User może nadpisać przez "Fade in" w expanded panel.
+    const DEFAULT_CROSSFADE_MS = 1500;
+
+    // Płynna zmiana audio.volume przez requestAnimationFrame. RAF
+    // synchronizuje z VSync browsera, więc fade jest gładki bez
+    // zacinania się (vs setInterval z fixed step). Po zakończeniu
+    // wywoływany onEnd. Bezpieczne dla audio = null / disposed.
+    function fadeAudio(audio, fromVol, toVol, durationMs, onEnd) {
+        if (!audio || durationMs <= 0) {
+            if (audio) {
+                try { audio.volume = toVol; } catch { }
+            }
+            if (onEnd) onEnd();
+            return;
+        }
+        const start = performance.now();
+        const tick = () => {
+            // Audio mogło zostać disposed w trakcie fade — zatrzymujemy się
+            // żeby nie ustawić volume na zwolnionym elemencie.
+            if (!audio || !audio.src) {
+                if (onEnd) onEnd();
+                return;
+            }
+            const t = Math.min(1, (performance.now() - start) / durationMs);
+            try { audio.volume = fromVol + (toVol - fromVol) * t; } catch { }
+            if (t < 1) {
+                requestAnimationFrame(tick);
+            } else if (onEnd) {
+                onEnd();
+            }
+        };
+        requestAnimationFrame(tick);
     }
 
     function newSessionId() {

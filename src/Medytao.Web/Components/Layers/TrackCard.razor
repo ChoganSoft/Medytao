@@ -429,16 +429,19 @@
     // robi silnik audio z time-anchored trackiem w tej warstwie.
     private string StartAtNoteText() => LayerType?.ToLowerInvariant() switch
     {
-        "text" => "Plays as overlay",
+        "text" => "Cuts in, replacing the previous fragment",
         "fx" => "Plays as one-shot accent",
-        "music" => "(Music/Nature scheduling — coming soon)",
-        "nature" => "(Music/Nature scheduling — coming soon)",
+        "music" => "Crossfades over the current track",
+        "nature" => "Crossfades over the current track",
         _ => ""
     };
 
-    private string StartAtNoteTitle() => LayerType?.ToLowerInvariant() is "music" or "nature"
-        ? "Crossfade scheduling for Music/Nature comes in a later iteration"
-        : "";
+    private string StartAtNoteTitle() => LayerType?.ToLowerInvariant() switch
+    {
+        "music" => "Fade duration uses the track's Fade in field (default 1.5s)",
+        "nature" => "Fade duration uses the track's Fade in field (default 1.5s)",
+        _ => ""
+    };
 
     private Task PersistAsync()
     {
