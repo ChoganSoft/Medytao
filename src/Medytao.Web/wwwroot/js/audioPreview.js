@@ -1089,8 +1089,11 @@ window.meditationPlayer = window.medytaoAudio;
             });
         },
 
-        // Real-time głośność warstwy. Jeżeli coś w warstwie gra, zmieniamy
-        // od razu głośność aktywnego <audio>.
+        // Real-time głośność warstwy. Aktualizuje WSZYSTKIE aktywne audio
+        // w warstwie — sequenced (state.audio) i overlay (scheduled tracki
+        // grające po time-anchored triggerze). Bez applyAllAudiosVolume
+        // setter działał tylko na sequenced i nie ogarniał warstw z samymi
+        // scheduled trackami.
         setLayerVolume(sessionId, layerId, volume) {
             const L = findLayer(sessionId, layerId);
             if (!L) {
@@ -1098,8 +1101,12 @@ window.meditationPlayer = window.medytaoAudio;
                 return;
             }
             L.layerVolume = clamp01(volume);
-            applyCurrentVolume(L);
-            console.debug('[medytaoPlayer] setLayerVolume', { layerId, volume: L.layerVolume, effective: L.audio ? L.audio.volume : null });
+            applyAllAudiosVolume(L);
+            console.debug('[medytaoPlayer] setLayerVolume', {
+                layerId, volume: L.layerVolume,
+                seqVolume: L.audio ? L.audio.volume : null,
+                overlayCount: L.scheduledOverlays ? L.scheduledOverlays.length : 0
+            });
         },
 
         // Wycisz / odcisz warstwę. Nie zatrzymujemy <audio> — tylko ściągamy
@@ -1111,32 +1118,41 @@ window.meditationPlayer = window.medytaoAudio;
                 return;
             }
             L.muted = !!muted;
-            applyCurrentVolume(L);
+            applyAllAudiosVolume(L);
             console.debug('[medytaoPlayer] setLayerMuted', { layerId, muted: L.muted });
         },
 
-        // Real-time głośność pojedynczego tracka. Mutujemy wpis w state.tracks —
-        // nawet jeżeli track jeszcze nie leci, następne wywołanie playCurrent
-        // zobaczy nową wartość.
+        // Real-time głośność pojedynczego tracka. Mutujemy wpis w state.tracks
+        // (sequenced) ALBO state.scheduledTracks (time-anchored) — w zależności
+        // gdzie ten track jest. Następnie aktualizujemy volume na każdym
+        // aktywnym audio — sequenced state.audio jeśli to current sequenced,
+        // każdy overlay jeśli to scheduled track aktualnie grający.
         setTrackVolume(sessionId, layerId, trackId, volume) {
             const L = findLayer(sessionId, layerId);
             if (!L) {
-                console.warn('[medytaoPlayer] setTrackVolume: layer not found', { sessionId, layerId, knownLayers: sessions.get(sessionId)?.layers.map(l => l.layerId) });
+                console.warn('[medytaoPlayer] setTrackVolume: layer not found', { sessionId, layerId });
                 return;
             }
-            const t = L.tracks.find(x => x && eqId(x.trackId, trackId));
-            if (!t) {
-                console.warn('[medytaoPlayer] setTrackVolume: track not found', { layerId, trackId, knownTracks: L.tracks.map(x => x && x.trackId) });
+            const v = clamp01(volume);
+
+            // Mutuj wartość w odpowiednim bucket-cie. Settery są niezależne
+            // od bieżącego stanu odtwarzania — następne wejście playCurrent /
+            // triggerOverlay/Crossfade zobaczy nową wartość.
+            let inSeq = L.tracks.find(x => x && eqId(x.trackId, trackId));
+            let inSched = inSeq ? null : (L.scheduledTracks ? L.scheduledTracks.find(x => x && eqId(x.trackId, trackId)) : null);
+            if (!inSeq && !inSched) {
+                console.warn('[medytaoPlayer] setTrackVolume: track not found', { layerId, trackId });
                 return;
             }
-            t.volume = clamp01(volume);
-            const current = L.tracks[L.index];
-            const isCurrent = current && eqId(current.trackId, trackId);
-            if (isCurrent) applyCurrentVolume(L);
+            if (inSeq) inSeq.volume = v;
+            if (inSched) inSched.volume = v;
+
+            // Live-update: applyAllAudiosVolume liczy effective volume dla
+            // każdego aktywnego audio na podstawie zmutowanego stanu.
+            applyAllAudiosVolume(L);
+
             console.debug('[medytaoPlayer] setTrackVolume', {
-                layerId, trackId, volume: t.volume, isCurrent,
-                audioVolume: L.audio ? L.audio.volume : null,
-                layerVolume: L.layerVolume, muted: L.muted
+                layerId, trackId, volume: v, sequenced: !!inSeq, scheduled: !!inSched
             });
         },
 
@@ -1257,10 +1273,36 @@ window.meditationPlayer = window.medytaoAudio;
         return s.layers.find(L => eqId(L.layerId, layerId)) || null;
     }
 
+    // Aktualizuje volume na sequenced state.audio (jeśli leci) — wartość
+    // pochodzi z aktualnego tracka w sekwencji.
     function applyCurrentVolume(L) {
         if (!L.audio) return;
         const track = L.tracks[L.index];
         L.audio.volume = effectiveVolume(L.layerVolume, track ? track.volume : 1, L.muted);
+    }
+
+    // Aktualizuje volume na WSZYSTKICH aktywnych audio w warstwie:
+    // sequenced (state.audio) + overlay (state.scheduledOverlays). Bez
+    // tego setLayerVolume / setLayerMuted działały tylko na sequenced —
+    // gdy warstwa miała same scheduled tracki (np. Text z time-anchored
+    // fragmentami), suwaki nic nie zmieniały bo state.audio = null.
+    function applyAllAudiosVolume(L) {
+        if (L.audio) {
+            const seqTrack = L.tracks[L.index];
+            L.audio.volume = effectiveVolume(L.layerVolume, seqTrack ? seqTrack.volume : 1, L.muted);
+        }
+        if (L.scheduledOverlays) {
+            for (const o of L.scheduledOverlays) {
+                // Volume scheduled tracka znajdujemy po trackId w
+                // L.scheduledTracks (źródło prawdy mutowane przez settery).
+                let trackVol = 1;
+                if (L.scheduledTracks) {
+                    const t = L.scheduledTracks.find(x => x && eqId(x.trackId, o.trackId));
+                    if (t) trackVol = (typeof t.volume === 'number') ? t.volume : 1;
+                }
+                o.audio.volume = effectiveVolume(L.layerVolume, trackVol, L.muted);
+            }
+        }
     }
 
     function clamp01(v) {
