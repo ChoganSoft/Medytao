@@ -227,7 +227,9 @@
         color: var(--color-text-secondary);
         border-radius: 50%;
         cursor: pointer;
-        font-size: 18px; line-height: 1;
+        /* 14px dla fa-trash — jego wizualna waga jest większa niż unicode-glyph,
+           więc 18px wyglądało za duże w stosunku do pozostałych ikon UI. */
+        font-size: 14px; line-height: 1;
         display: inline-flex; align-items: center; justify-content: center;
         padding: 0;
         flex-shrink: 0;
