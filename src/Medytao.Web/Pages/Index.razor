@@ -403,6 +403,10 @@
         padding: 0;
         transition: background 0.15s, color 0.15s;
     }
+    /* Kosz fa-trash ma większą wagę wizualną niż unicode pencil w edit-btn,
+       więc na tym samym font-size 18px wyglądał za duży obok ołówka.
+       Zmniejszamy delete do 14px — optycznie zrównuje się z edit. */
+    .delete-btn { font-size: 14px; }
     .edit-btn:hover {
         background: var(--color-background-secondary);
         color: var(--color-text-primary);
