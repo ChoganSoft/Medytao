@@ -65,7 +65,9 @@
                             <i class="@(a.IsShared ? "fa-solid fa-globe" : "fa-solid fa-lock")" aria-hidden="true"></i>
                             <span>@(a.IsShared ? "Shared" : "Private")</span>
                         </button>
-                        <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">×</button>
+                        <button class="delete-btn" @onclick="() => Delete(a.Id)" title="Delete">
+                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                        </button>
                     }
                     else
                     {
@@ -257,7 +259,10 @@
     .asset-details { flex: 1; min-width: 0; }
     .asset-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset-meta { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
-    .delete-btn { background: none; border: none; font-size: 18px; color: var(--color-text-tertiary); cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+    /* fa-trash 12px — drobna ikonka w wierszu asset-card razem z share-toggle
+       (też kompaktowy element). 18px Unicode-x był wizualnie cięższy niż
+       resz wiersza, kosz przy tym samym rozmiarze byłby przesadny. */
+    .delete-btn { background: none; border: none; font-size: 12px; color: var(--color-text-tertiary); cursor: pointer; padding: 4px 6px; border-radius: 4px; }
     .delete-btn:hover { color: var(--color-text-danger); background: var(--color-background-danger); }
 
     /* Toggle udostępniania własnego zasobu. Stan "off" (private) — neutralny,
