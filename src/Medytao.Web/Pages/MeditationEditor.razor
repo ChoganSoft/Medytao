@@ -24,11 +24,35 @@ else
                 {
                     <button class="btn-secondary" @onclick="Publish">Publish</button>
                 }
+                @* Główny przycisk to toggle Play/Pause (z dodatkowym stanem
+                   "Resume" gdy sesja jest spauzowana). Stop jest osobnym
+                   przyciskiem obok i pojawia się tylko gdy w ogóle jest co
+                   zatrzymać (gra ALBO spauzowane), żeby nie zaśmiecać UI
+                   w stanie spoczynku. *@
                 <button class="btn-primary play-toggle @(PlaybackSession.IsPlaying ? "playing" : "")"
                         @onclick="TogglePlayback"
                         disabled="@(!HasAnyTracks)">
-                    @(PlaybackSession.IsPlaying ? "◼ Stop" : "▶ Play")
+                    @if (PlaybackSession.IsPlaying)
+                    {
+                        <span>⏸ Pause</span>
+                    }
+                    else if (PlaybackSession.IsPaused)
+                    {
+                        <span>▶ Resume</span>
+                    }
+                    else
+                    {
+                        <span>▶ Play</span>
+                    }
                 </button>
+                @if (PlaybackSession.IsActive)
+                {
+                    <button class="btn-secondary stop-btn"
+                            @onclick="StopPlayback"
+                            title="Stop playback">
+                        ◼ Stop
+                    </button>
+                }
             </div>
         </div>
 
@@ -241,18 +265,27 @@ else
         _meditation = await MeditationSvc.GetByIdAsync(Id);
     }
 
+    // Trzy stany toggle'a: gra → pauza, spauzowane → resume, spoczynek → start.
+    // Stop jest osobnym przyciskiem (StopPlayback), żeby user nie tracił
+    // pozycji przez przypadkowy klik w "główny" guzik.
     private async Task TogglePlayback()
     {
         if (_meditation is null) return;
         if (PlaybackSession.IsPlaying)
         {
-            await PlaybackSession.StopAsync();
+            await PlaybackSession.PauseAsync();
+        }
+        else if (PlaybackSession.IsPaused)
+        {
+            await PlaybackSession.ResumeAsync();
         }
         else
         {
             await PlaybackSession.StartAsync(_meditation);
         }
     }
+
+    private Task StopPlayback() => PlaybackSession.StopAsync();
 
     // Drag suwaka: tylko preview wizualny — nic nie ruszamy w audio,
     // żeby przy każdym pikselu drag-u nie restartować sesji. Wartość
@@ -262,16 +295,17 @@ else
         _seekDragMs = ms;
     }
 
-    // Release suwaka: faktyczny seek. Gdy sesja gra → przeskocz przez
-    // SeekAsync (stop+start z nowym startFromMs). Gdy nie gra, ale mamy
-    // medytację — start od tej pozycji (intuicyjne: drag bez Play to
-    // też sygnał "graj stąd"). _seekDragMs czyścimy żeby kolejny render
-    // wracał do realnego ElapsedMs z PlaybackSession.
+    // Release suwaka: faktyczny seek. Gdy sesja gra → restart przez SeekAsync
+    // z nowym startFromMs. Gdy spauzowana → SeekAsync tylko aktualizuje
+    // zamrożoną pozycję bez wznawiania (jak w mp3 playerze: scrub w pauzie
+    // przesuwa kropkę, ale nie startuje audio). Gdy spoczynek — start od
+    // tej pozycji (drag bez Play to też sygnał "graj stąd"). _seekDragMs
+    // czyścimy żeby kolejny render wracał do realnego ElapsedMs z service-u.
     private async Task OnSeekRelease(double ms)
     {
         _seekDragMs = null;
         if (_meditation is null) return;
-        if (PlaybackSession.IsPlaying)
+        if (PlaybackSession.IsActive)
         {
             await PlaybackSession.SeekAsync(ms);
         }

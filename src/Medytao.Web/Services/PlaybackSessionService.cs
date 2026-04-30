@@ -29,6 +29,13 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     // nie ruszał gdy JS rzucił wyjątek.
     private DateTimeOffset? _sessionStartedAt;
 
+    // Pozycja w master-clocku w momencie ostatniej pauzy. Null = nie spauzowane
+    // (sesja gra normalnie albo brak sesji). Stan pauzy jest ortogonalny do
+    // _sessionId — przy pauzie robimy pełny teardown w JS (bo to MVP wariant
+    // "restart from elapsed"), ale C# pamięta _pausedAtMs i _lastMeditation,
+    // żeby ResumeAsync mógł wystartować JS od zapamiętanej pozycji.
+    private double? _pausedAtMs;
+
     // Wall-clock moment ostatniego restartu sesji (start lub seek). Auto-stop
     // (gdy wszystkie warstwy raportują Finished) świadomie się wyciszasz przez
     // pierwsze ~2s — chroni przed scenariuszem "user kliknął suwak poza
@@ -72,14 +79,30 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     /// <summary>Sygnalizuje zmianę stanu (start / stop / tick progressu).</summary>
     public event Action? OnChanged;
 
-    public bool IsActive => _sessionId is not null;
-
-    /// <summary>Czy w ogóle coś gra (alias dla <see cref="IsActive"/> — nazwa dla czytelności w UI).</summary>
+    /// <summary>
+    /// Czy aktualnie gra dźwięk (sesja JS żywa, nie spauzowana). False zarówno
+    /// gdy nic nie startowało, jak i gdy user spauzował (wtedy <see cref="IsPaused"/>=true).
+    /// </summary>
     public bool IsPlaying => _sessionId is not null;
 
     /// <summary>
-    /// Id medytacji, która aktualnie leci — null gdy brak aktywnej sesji.
-    /// Używane przez listę medytacji żeby wiedzieć, którą kartę podświetlić jako "grająca".
+    /// Czy sesja jest spauzowana. JS-owej sesji nie ma (zrobiliśmy teardown
+    /// żeby zatrzymać dźwięk), ale C# pamięta pozycję i medytację, więc
+    /// <see cref="ResumeAsync"/> wznowi od tego miejsca.
+    /// </summary>
+    public bool IsPaused => _pausedAtMs is not null;
+
+    /// <summary>
+    /// Czy karta medytacji powinna być traktowana jako "trwa odtwarzanie"
+    /// (gra ALBO spauzowana). Ten fakt steruje np. enabled-state przycisku
+    /// Stop oraz podświetleniem karty na liście medytacji.
+    /// </summary>
+    public bool IsActive => IsPlaying || IsPaused;
+
+    /// <summary>
+    /// Id medytacji, której aktualnie dotyczy sesja (gra lub spauzowana) —
+    /// null gdy brak aktywnej sesji. Używane przez listę medytacji żeby wiedzieć,
+    /// którą kartę podświetlić jako "grająca".
     /// </summary>
     public Guid? CurrentMeditationId => _meditationId;
 
@@ -132,13 +155,16 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     /// <summary>
     /// Master-clock medytacji: ile ms minęło od pozycji "ms 0" tej sesji.
     /// Po seeku wartość natychmiast skacze na nową pozycję, bo
-    /// _sessionStartedAt jest cofnięty o startFromMs. Zwraca 0 gdy nic
-    /// nie gra.
+    /// _sessionStartedAt jest cofnięty o startFromMs. Podczas pauzy zwraca
+    /// zamrożoną pozycję (<c>_pausedAtMs</c>) — UI może wtedy nadal pokazywać
+    /// suwak na właściwym miejscu, mimo że JS-owa sesja została zdjęta.
+    /// Zwraca 0 gdy nic nie gra i nie jest spauzowane.
     /// </summary>
     public double ElapsedMs
     {
         get
         {
+            if (_pausedAtMs is not null) return _pausedAtMs.Value;
             if (_sessionStartedAt is null) return 0;
             var ms = (DateTimeOffset.UtcNow - _sessionStartedAt.Value).TotalMilliseconds;
             return ms < 0 ? 0 : ms;
@@ -171,6 +197,13 @@ public sealed class PlaybackSessionService : IAsyncDisposable
         if (_sessionId is not null) await StopAsync();
 
         if (startFromMs < 0) startFromMs = 0;
+
+        // Świeży Play kasuje stan pauzy — bez tego po starcie mielibyśmy
+        // równocześnie IsPlaying i IsPaused, a ElapsedMs zwracałby zamrożoną
+        // wartość zamiast prawdziwego master-clocka. ResumeAsync zeruje to
+        // samo zanim tu wejdzie, ale przy bezpośrednim StartAsync (np. user
+        // kliknął kartę innej medytacji w pauzie) potrzebujemy guard'a tutaj.
+        _pausedAtMs = null;
 
         // Zapamiętujemy referencję żeby SeekAsync mógł re-startować z nową pozycją
         // bez konieczności przeładowywania DTO przez API.
@@ -261,16 +294,61 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Skacze do podanej pozycji medytacji. Najprostsza implementacja:
-    /// stop + start z nowym startFromMs. Krótka cisza (~kilka ms) przy
-    /// rebuilcie grafu audio, ale zachowuje wszystkie ustawienia (volume,
-    /// reverb, rate) bo lecimy po tych samych DTO. Brak _lastMeditation
+    /// Skacze do podanej pozycji medytacji. Gdy gra — restart sesji JS z nowym
+    /// startFromMs (krótka cisza przy rebuilcie grafu, ale zachowuje wszystkie
+    /// ustawienia volume/reverb/rate, bo lecimy po tych samych DTO). Gdy sesja
+    /// jest spauzowana — tylko aktualizujemy zamrożoną pozycję, bez wznawiania:
+    /// user może scrub-ować po pasku w pauzie i kliknąć Resume żeby ruszyć
+    /// z nowego miejsca, dokładnie jak w odtwarzaczu mp3. Brak _lastMeditation
     /// (sesja jeszcze nie startowała) = no-op.
     /// </summary>
     public async Task SeekAsync(double targetMs)
     {
         if (_lastMeditation is null) return;
+        if (targetMs < 0) targetMs = 0;
+        if (_pausedAtMs is not null)
+        {
+            _pausedAtMs = targetMs;
+            OnChanged?.Invoke();
+            return;
+        }
         await StartAsync(_lastMeditation, targetMs);
+    }
+
+    /// <summary>
+    /// Zamraża sesję na bieżącej pozycji. MVP wariant: pełny teardown JS-owej
+    /// sesji (audio, scheduled timers, fade timers) + zapis <c>_pausedAtMs</c>
+    /// w C#. <see cref="ResumeAsync"/> wystartuje JS-a od nowa z tej pozycji
+    /// używając istniejącego mechanizmu fast-forward w <c>startSession</c>.
+    /// Cena: ~200ms cisza przy resume (dispose + nowy load). Plus: zero ryzyka
+    /// race-conditions z RAF rampami i scheduled timeoutami.
+    /// No-op gdy nic nie gra albo już spauzowane.
+    /// </summary>
+    public async Task PauseAsync()
+    {
+        if (_sessionId is null || _pausedAtMs is not null) return;
+        var elapsed = ElapsedMs;
+        await TeardownJsSessionAsync();
+        // _meditationId zostawiamy świadomie — karta na liście medytacji ma
+        // dalej być podświetlona jako "ta jest aktualnie wybrana", a UI
+        // edytora odróżnia "gra" od "spauzowana" po IsPaused.
+        _pausedAtMs = elapsed;
+        OnChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Wznawia z zapamiętanej pozycji. Używa <see cref="StartAsync"/> z
+    /// <c>startFromMs = _pausedAtMs</c> — to ten sam mechanizm fast-forward
+    /// co przy seeku. No-op gdy nie ma czego wznawiać (brak pauzy lub brak
+    /// referencji do medytacji).
+    /// </summary>
+    public async Task ResumeAsync()
+    {
+        if (_pausedAtMs is null || _lastMeditation is null) return;
+        var resumeFrom = _pausedAtMs.Value;
+        _pausedAtMs = null;
+        // StartAsync sam emituje OnChanged po udanym starcie — nie duplikujemy.
+        await StartAsync(_lastMeditation, resumeFrom);
     }
 
     /// <summary>
@@ -311,21 +389,36 @@ public sealed class PlaybackSessionService : IAsyncDisposable
 
     public async Task StopAsync()
     {
+        await TeardownJsSessionAsync();
+        _meditationId = null;
+        _pausedAtMs = null;
+        // _lastMeditation świadomie zostaje — żeby user po Stop mógł znowu
+        // kliknąć Play albo seekować bez ponownego ładowania DTO.
+        OnChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Zatrzymuje JS-ową sesję (audio, timers) i zeruje stan progress'u +
+    /// master-clock'u — ale NIE rusza <c>_meditationId</c>, <c>_pausedAtMs</c>
+    /// ani <c>_lastMeditation</c>. Współdzielone między <see cref="StopAsync"/>
+    /// (potem zerujemy też powyższe pola) i <see cref="PauseAsync"/> (chcemy
+    /// zachować info, "co" zostało spauzowane i "gdzie"). Bez OnChanged —
+    /// caller decyduje, kiedy wyemitować, żeby UI zobaczył tylko jeden
+    /// spójny stan po zmianie.
+    /// </summary>
+    private async Task TeardownJsSessionAsync()
+    {
         StopProgressTimer();
         var sid = _sessionId;
         _sessionId = null;
-        _meditationId = null;
         _sessionStartedAt = null;
         _sessionRestartedAt = null;
         _progressByLayer = new();
-        // _lastMeditation świadomie zostaje — żeby user po Stop mógł znowu
-        // kliknąć Play albo seekować bez ponownego ładowania DTO.
 
         if (sid is not null)
         {
             try { await _js.InvokeVoidAsync("medytaoPlayer.stopSession", sid); } catch { }
         }
-        OnChanged?.Invoke();
     }
 
     public async Task SetLayerVolumeAsync(Guid layerId, float volume)
