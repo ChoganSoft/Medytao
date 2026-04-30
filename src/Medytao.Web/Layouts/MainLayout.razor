@@ -166,7 +166,7 @@
             var p when p.StartsWith("assets/") => $"{Capitalize(p["assets/".Length..])} library",
             "assets" => "Asset library", // legacy URL bez warstwy — Assets.razor i tak przekieruje na /assets/music
             var p when p.StartsWith("programs/") => "Program",
-            var p when p.StartsWith("meditations/") => "Meditation editor",
+            var p when p.StartsWith("meditations/") => "Session editor",
             _ => "Home"
         };
     }

@@ -7,7 +7,7 @@
     <div class="page-header">
         <div>
             <h1>Categories</h1>
-            <p class="subtitle">Session types used when creating a meditation</p>
+            <p class="subtitle">Types used when creating a session</p>
         </div>
         <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
     </div>
@@ -20,7 +20,7 @@
     {
         <div class="empty-state">
             <div class="empty-icon">☰</div>
-            <p>No categories yet. Add one to tag your meditations.</p>
+            <p>No categories yet. Add one to tag your sessions.</p>
             <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
         </div>
     }
@@ -33,7 +33,7 @@
                     <div class="category-info">
                         <span class="category-name">@c.Name</span>
                         <span class="category-meta">
-                            @(c.MeditationCount == 1 ? "1 meditation" : $"{c.MeditationCount} meditations")
+                            @(c.MeditationCount == 1 ? "1 session" : $"{c.MeditationCount} sessions")
                         </span>
                     </div>
                     <button class="delete-btn" @onclick="() => ConfirmDelete(c)" title="Delete">
@@ -78,7 +78,7 @@
                 <strong>@_deleting.Name</strong> will be removed from your dictionary.
                 @if (_deleting.MeditationCount > 0)
                 {
-                    <text> @_deleting.MeditationCount meditations will become uncategorized.</text>
+                    <text> @_deleting.MeditationCount sessions will become uncategorized.</text>
                 }
             </p>
             <div class="modal-actions">

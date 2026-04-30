@@ -7,7 +7,7 @@
     <div class="page-header">
         <div>
             <h1>My programs</h1>
-            <p class="subtitle">Organise meditations into programs</p>
+            <p class="subtitle">Organise sessions into programs</p>
         </div>
         <button class="btn-primary" @onclick="CreateNew">+ New program</button>
     </div>
@@ -53,11 +53,11 @@
                        → placeholder "No meditations yet". Ikonę "list" z FA
                        zostawiamy dla symetrii z kartą medytacji. *@
                     <div class="gold-bar">
-                        <div class="gold-bar-item" title="@(p.MeditationTitles.Count == 0 ? "No meditations" : string.Join(", ", p.MeditationTitles))">
+                        <div class="gold-bar-item" title="@(p.MeditationTitles.Count == 0 ? "No sessions" : string.Join(", ", p.MeditationTitles))">
                             <i class="fa-solid fa-list gold-bar-icon" aria-hidden="true"></i>
                             @if (p.MeditationTitles.Count == 0)
                             {
-                                <span class="gold-bar-empty">No meditations yet</span>
+                                <span class="gold-bar-empty">No sessions yet</span>
                             }
                             else
                             {
@@ -144,7 +144,7 @@
                 <strong>@_deleting.Name</strong> will be permanently removed.
                 @if (_deleting.MeditationTitles.Count > 0)
                 {
-                    <text> Meditations that exist only in this program will also be deleted (@_deleting.MeditationTitles.Count in total). This cannot be undone.</text>
+                    <text> Sessions that exist only in this program will also be deleted (@_deleting.MeditationTitles.Count in total). This cannot be undone.</text>
                 }
                 else
                 {
