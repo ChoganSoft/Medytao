@@ -346,11 +346,15 @@
         height: 56px;
         padding: 0 24px;
         background: var(--color-background-primary);
-        /* #bbb — twardy kolor zamiast var(--color-border-tertiary), żeby
-           odgraniczenie globalnego nagłówka od reszty było wyraźne niezależnie
-           od motywu. Reszta border-ów w aplikacji zostaje na zmiennej motywu. */
+        /* Twardy kolor border-a zamiast var(--color-border-tertiary), żeby
+           odgraniczenie globalnego nagłówka było wyraźne. Per motyw —
+           #bbb dla jasnego tła, #555 dla ciemnego (zob. nadpisanie poniżej).
+           Reszta border-ów w aplikacji zostaje na zmiennej motywu. */
         border-bottom: 1px solid #bbb;
         flex-shrink: 0;
+    }
+    :root[data-theme="dark"] .top-bar {
+        border-bottom-color: #555;
     }
     .sidebar-toggle {
         width: 36px; height: 36px;
