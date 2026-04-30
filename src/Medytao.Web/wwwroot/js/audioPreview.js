@@ -841,11 +841,9 @@ window.meditationPlayer = window.medytaoAudio;
         const graph = buildTrackGraph(state, audio, track.reverbMix || 0);
 
         // Crossfade duration prosto z "Crossfade to next" (track.crossfadeMs).
-        // Brak fallback na fadeInMs ani DEFAULT — gdy user explicite ustawi 0,
+        // Brak ukrytego defaultu — gdy user nie ustawi nic albo postawi 0,
         // szanujemy to (hard cut: stary disposed natychmiast, nowy startuje
-        // od pełnego volume). Domyślna wartość 3000 ms dla świeżo aktywowanego
-        // time-anchored Music/Nature jest podsuwana w UI (TrackCard.OnStartAtToggle),
-        // więc field zawsze pokazuje wartość, która faktycznie zadziała.
+        // od pełnego volume). User świadomie wpisuje liczbę gdy chce fade.
         const fadeMs = (typeof track.crossfadeMs === 'number' && track.crossfadeMs > 0)
             ? track.crossfadeMs
             : 0;
