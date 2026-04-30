@@ -60,7 +60,9 @@
 
         </div>
 
-        <button class="remove-btn" @onclick:stopPropagation="true" @onclick="Remove" title="Remove track">×</button>
+        <button class="remove-btn" @onclick:stopPropagation="true" @onclick="Remove" title="Remove track">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+        </button>
         <span class="expand-arrow">@(IsExpanded ? "∧" : "∨")</span>
     </div>
 
@@ -532,10 +534,13 @@
     .loop-infinity { font-size: 14px; color: var(--color-text-info); }
     .loop-x { font-size: 11px; color: var(--color-text-tertiary); }
 
+    /* fa-trash z 12px — track-row jest densijny, button mniejszy niż na
+       kartach (14px tam). Reszta przycisków w wierszu (loop-control, expand)
+       też siedzi w okolicach 11-12px, więc kosz nie wybija się wysokością. */
     .remove-btn {
-        background: none; border: none; font-size: 18px; line-height: 1;
+        background: none; border: none; font-size: 12px; line-height: 1;
         color: var(--color-text-tertiary); cursor: pointer;
-        padding: 2px 6px; border-radius: 4px;
+        padding: 4px 6px; border-radius: 4px;
     }
     .remove-btn:hover { color: var(--color-text-danger); background: var(--color-background-danger); }
 
