@@ -64,16 +64,20 @@
                                 <span class="gold-bar-titles">@string.Join("  •  ", p.MeditationTitles)</span>
                             }
                         </div>
+                        @* Enter button przeniesiony z card-actions na prawą stronę
+                           gold-bara — primary action wbudowana w pasek tytułów,
+                           a nie schowana w dolnym rogu obok edit/delete. Białe kółko
+                           ze złotą strzałką (odwrotny kontrast niż reszta paska). *@
+                        <button class="enter-btn" @onclick="() => Enter(p.Id)" title="Open program">
+                            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                        </button>
                     </div>
 
                     <div class="card-footer-meta">Created @p.CreatedAt.ToString("MMM d, yyyy")</div>
 
                     <div class="card-actions">
-                        @* Enter — główna akcja, podkreślona kolorem akcentu (gold).
-                           Edit — ołówek, sama nazwa + opis. Delete — FA xmark. *@
-                        <button class="enter-btn" @onclick="() => Enter(p.Id)" title="Open program">
-                            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                        </button>
+                        @* Edit — ołówek, sama nazwa + opis. Delete — FA xmark.
+                           Enter wcześniej był tutaj, teraz siedzi na gold-bar. *@
                         <button class="edit-btn" @onclick="() => BeginEdit(p)" title="Edit">✎</button>
                         <button class="delete-btn" @onclick="() => ConfirmDelete(p)" title="Delete">
                             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -321,12 +325,14 @@
        zobaczy w tooltipie (title na .gold-bar-item). */
     .gold-bar {
         display: flex; align-items: center;
+        gap: 16px;
         background: #C5A56C;
-        padding: 18px 28px;
+        padding: 14px 28px;
         /* Ujemne marginesy boczne wyciągają pasek na pełną szerokość karty
            (negują padding 28px). Margin-bottom:0 — odstęp do przycisków jest
            w całości obsługiwany przez padding-bottom:68px, dzięki czemu
-           przestrzeń nad i pod przyciskami jest symetryczna (po 14px). */
+           przestrzeń nad i pod przyciskami jest symetryczna (po 14px).
+           Gap 16px zostawia miejsce między listą tytułów a enter-btn po prawej. */
         margin: 0 -28px;
         min-width: 0;
     }
@@ -364,20 +370,27 @@
         display: flex; align-items: center; gap: 6px;
     }
 
-    /* Enter button — 40px, te same wymiary co play button na karcie medytacji.
-       Używa koloru akcentu (gold), podkreśla primary action. */
+    /* Enter button — siedzi na gold-bar (z prawej). Białe kółko ze złotą
+       strzałką = odwrócenie kontrastu reszty paska, dzięki czemu primary
+       action wybija się jako "guzik na pasku" zamiast zlewać z tłem.
+       flex-shrink:0 zabezpiecza przed rozjazdem gdy gold-bar-item ma długą
+       listę tytułów. */
     .enter-btn {
-        width: 40px; height: 40px;
+        width: 36px; height: 36px;
         border: none; cursor: pointer;
         border-radius: 50%;
         display: inline-flex; align-items: center; justify-content: center;
-        background: var(--color-text-info);
-        color: var(--color-background-primary);
-        font-size: 16px; line-height: 1;
+        background: #FFFFFF;
+        color: #C5A56C;
+        font-size: 14px; line-height: 1;
         padding: 0;
-        transition: filter 0.15s;
+        flex-shrink: 0;
+        transition: transform 0.15s, box-shadow 0.15s;
     }
-    .enter-btn:hover { filter: brightness(1.08); }
+    .enter-btn:hover {
+        transform: scale(1.08);
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
+    }
 
     .edit-btn, .delete-btn {
         width: 36px; height: 36px;
