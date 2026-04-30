@@ -83,16 +83,14 @@
                     <input type="number" min="0" step="100" @bind="_fadeInMs" class="ms-input" /> ms
                 </div>
             }
-            <div class="detail-row">
-                <span class="detail-label">Fade out</span>
-                <input type="number" min="0" step="100" @bind="_fadeOutMs" class="ms-input" /> ms
-            </div>
             @* "Crossfade to next" wpływa tylko na duration crossfade-u w Music/Nature
                przy time-anchored trackach (zob. triggerCrossfade w audioPreview.js).
                W Text/Fx scheduled to overlay/interrupt bez crossfade-u, w sequenced
                crossfade-do-następnego-w-kolejce nie jest zaimplementowany. Pokazywanie
                pola gdy nie ma efektu byłoby mylące, więc widzimy je tylko tam,
-               gdzie faktycznie zmienia zachowanie. *@
+               gdzie faktycznie zmienia zachowanie.
+               Kolejność: crossfade PRZED fade-out — chronologicznie crossfade-in
+               jest na początku tracka (zastępuje Fade in), fade-out na końcu. *@
             @if (_startAtEnabled && (string.Equals(LayerType, "Music", StringComparison.OrdinalIgnoreCase)
                                      || string.Equals(LayerType, "Nature", StringComparison.OrdinalIgnoreCase)))
             {
@@ -101,6 +99,10 @@
                     <input type="number" min="0" step="100" @bind="_crossfadeMs" class="ms-input" /> ms
                 </div>
             }
+            <div class="detail-row">
+                <span class="detail-label">Fade out</span>
+                <input type="number" min="0" step="100" @bind="_fadeOutMs" class="ms-input" /> ms
+            </div>
 
             @* Slider tempa — wyłącznie dla warstwy Text. Porównanie case-insensitive
                (defensywne — backend daje canonical "Text", ale gdyby kiedyś przyszedł
