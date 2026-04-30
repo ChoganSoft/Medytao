@@ -17,7 +17,7 @@
                 <p class="subtitle">@_program.Description</p>
             }
         </div>
-        <button class="btn-primary" @onclick="CreateNew" disabled="@(_program is null)">+ New meditation</button>
+        <button class="btn-primary" @onclick="CreateNew" disabled="@(_program is null)">+ New session</button>
     </div>
 
     @if (_loading)
@@ -28,8 +28,8 @@
     {
         <div class="empty-state">
             <div class="empty-icon">◎</div>
-            <p>No meditations in this program yet.</p>
-            <button class="btn-primary" @onclick="CreateNew">+ New meditation</button>
+            <p>No sessions in this program yet.</p>
+            <button class="btn-primary" @onclick="CreateNew">+ New session</button>
         </div>
     }
     else
@@ -152,7 +152,7 @@
                             <button class="player-btn @(isPlayingCard ? "playing" : "")"
                                     @onclick="() => TogglePlay(m)"
                                     disabled="@(isLoadingThis || !hasAnyTracks)"
-                                    title="@(!hasAnyTracks ? "No tracks in this meditation" : (isPlayingCard ? "Pause" : (isPausedCard ? "Resume" : "Play")))">
+                                    title="@(!hasAnyTracks ? "No tracks in this session" : (isPlayingCard ? "Pause" : (isPausedCard ? "Resume" : "Play")))">
                                 @if (isLoadingThis)
                                 {
                                     <span class="spinner"></span>
@@ -203,7 +203,7 @@
 {
     <div class="modal-backdrop">
         <div class="modal">
-            <h2>New meditation</h2>
+            <h2>New session</h2>
             <div class="field">
                 <label>Title</label>
                 <input @bind="_newTitle" placeholder="e.g. Morning calm" />
@@ -211,14 +211,14 @@
             <div class="field">
                 <label>Category</label>
                 @* Dropdown z kategorii usera. Na tej stronie modal pokazuje się
-                   po kliku "+ New meditation", więc _categories są już załadowane
+                   po kliku "+ New session", więc _categories są już załadowane
                    z OnInitializedAsync. Jeśli lista pusta (bardzo mało prawdopodobne
                    po seedzie, ale user może wszystkie skasować) — pokazujemy link
                    do strony zarządzania zamiast selecta. *@
                 @if (_categories.Count == 0)
                 {
                     <p class="category-empty-hint">
-                        No categories yet. <a href="/categories">Add one</a> to tag this meditation.
+                        No categories yet. <a href="/categories">Add one</a> to tag this session.
                     </p>
                 }
                 else
@@ -234,7 +234,7 @@
             </div>
             <div class="field">
                 <label>Description (optional)</label>
-                <textarea @bind="_newDesc" placeholder="What is this meditation for?" rows="3"></textarea>
+                <textarea @bind="_newDesc" placeholder="What is this session for?" rows="3"></textarea>
             </div>
             <div class="modal-actions">
                 <button class="btn-secondary" @onclick="() => _creating = false">Cancel</button>
@@ -249,7 +249,7 @@
 {
     <div class="modal-backdrop">
         <div class="modal">
-            <h2>Delete meditation?</h2>
+            <h2>Delete session?</h2>
             <p class="modal-desc">
                 <strong>@_deletingMeditation.Title</strong> and all its tracks will be permanently removed. This cannot be undone.
             </p>
