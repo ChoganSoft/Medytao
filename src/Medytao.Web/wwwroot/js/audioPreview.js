@@ -542,7 +542,13 @@ window.meditationPlayer = window.medytaoAudio;
 
         // FadeIn: jeśli track.fadeInMs > 0, applyFadeIn ustawi volume=0
         // i ramp do targetVol. FadeOut: setTimeout na koniec ostatniego loopa.
-        applyFadeIn(audio, targetVol, track.fadeInMs);
+        // Mid-track guard: gdy weszliśmy w środku tracka po seeku
+        // (startOffsetSec > 0), fadeIn nie ma sensu — track logicznie
+        // już dawno gra, nie startujemy go od początku. Bez tego każdy
+        // klik w pasek timeline-a ponawia rampę 0→target dla każdego
+        // sequenced tracka który akurat jest aktywny w tym ms.
+        const isMidTrack = startOffsetSec > 0;
+        applyFadeIn(audio, targetVol, isMidTrack ? 0 : track.fadeInMs);
         scheduleFadeOut(audio, track.fadeOutMs, track.durationMs, trackRate, track.loopCount);
 
         audio.play().catch(err => console.warn('Medytao player: play failed', err));
@@ -636,8 +642,17 @@ window.meditationPlayer = window.medytaoAudio;
     // Bez przypadku (2) klik suwaka w środek długiego scheduled tracka
     // dawał ciszę: future-only-handling drop'owało wszystko, sesja po
     // chwili sama auto-stop'owała się (Finished=true), suwak skakał do 0.
-    function scheduleAnchoredTracks(state, seekFromMs) {
-        const seq = state.scheduledTracks || [];
+    // excludeTrackIds: opcjonalny Set<trackId>. Tracki z tego zbioru są
+    // pomijane zarówno w pętli past-but-active jak i future-schedule.
+    // Używane przez resumeSession — gdy track już gra jako overlay (po
+    // pauzie zostawiamy go żywego i tylko go play()'ujemy), nie chcemy go
+    // re-trigger-ować przez "past-but-active" branch tej funkcji.
+    function scheduleAnchoredTracks(state, seekFromMs, excludeTrackIds) {
+        const allSeq = state.scheduledTracks || [];
+        const exclude = excludeTrackIds || null;
+        const seq = exclude
+            ? allSeq.filter(t => !exclude.has(t.trackId))
+            : allSeq;
         if (seq.length === 0) return;
         const isOverlayLayer = isOverlayLayerType(state.layerType);
 
@@ -791,13 +806,16 @@ window.meditationPlayer = window.medytaoAudio;
         audio.addEventListener('ended', onEnded);
 
         state.scheduledOverlays.push({ trackId: track.trackId, audio, graph: overlayGraph });
-        // FadeIn (jeśli ustawione) + scheduleFadeOut. Po seeku z offsetMs > 0
-        // fadeIn ma sens jako "in-medias-res rozjazd" — pozostaje nawet gdy
-        // weszliśmy w środku tracka, krótki ramp łagodzi twardy start.
-        // FadeOut planowany od bieżącego currentTime — totalEffectiveMs to
-        // czas od początku audio, więc dla offset>0 pozostaje za dużo, ale
-        // to akceptowalna nieprecyzja dla overlay (one-shot).
-        applyFadeIn(audio, targetVol, track.fadeInMs);
+        // Mid-track guard: gdy overlay startuje z offsetMs > 0 (past-but-active
+        // po seeku), fadeIn pomijamy — track logicznie już gra od jakiegoś
+        // czasu, nie chcemy ramp-ować jakby był świeżo odpalony. Bez tego
+        // każdy klik w pasek timeline-a w obrębie aktywnego okna scheduled
+        // tracka rusza nową rampę 0→target. FadeOut planowany od bieżącego
+        // currentTime — totalEffectiveMs to czas od początku audio, więc dla
+        // offset>0 pozostaje za dużo, ale to akceptowalna nieprecyzja dla
+        // overlay (one-shot, krótki sample).
+        const isMidOverlay = typeof offsetMs === 'number' && offsetMs > 0;
+        applyFadeIn(audio, targetVol, isMidOverlay ? 0 : track.fadeInMs);
         scheduleFadeOut(audio, track.fadeOutMs, track.durationMs, rate, track.loopCount);
         audio.play().catch(err => console.warn('Medytao player: overlay play failed', err));
 
@@ -844,9 +862,17 @@ window.meditationPlayer = window.medytaoAudio;
         // Brak ukrytego defaultu — gdy user nie ustawi nic albo postawi 0,
         // szanujemy to (hard cut: stary disposed natychmiast, nowy startuje
         // od pełnego volume). User świadomie wpisuje liczbę gdy chce fade.
-        const fadeMs = (typeof track.crossfadeMs === 'number' && track.crossfadeMs > 0)
-            ? track.crossfadeMs
-            : 0;
+        // Mid-track guard: gdy crossfade odpala się z offsetMs > 0 (past-but-active
+        // po seeku), wymuszamy hard-cut. Crossfade z definicji ma sens tylko
+        // na styku dwóch tracków — gdy "wypadliśmy" w środek scheduled tracka
+        // przez klik w pasek, ramp 0→target na tym tracku byłby nielogiczny
+        // (track według master-clocka już dawno gra na pełnej głośności).
+        const isMidCrossfade = typeof offsetMs === 'number' && offsetMs > 0;
+        const fadeMs = isMidCrossfade
+            ? 0
+            : ((typeof track.crossfadeMs === 'number' && track.crossfadeMs > 0)
+                ? track.crossfadeMs
+                : 0);
 
         // Stary aktywny: najpierw sequenced, w razie braku — ostatni overlay
         // (poprzedni crossfade). Capture refs lokalnie, żeby setTimeout
@@ -962,6 +988,24 @@ window.meditationPlayer = window.medytaoAudio;
         }
         try { audio.volume = 0; } catch { }
         fadeAudio(audio, 0, targetVol, fadeInMs);
+    }
+
+    // scheduleFadeOutFromRemaining: wariant scheduleFadeOut, w którym caller
+    // sam policzył ile pozostało wall-clock ms grania (np. po pauzie wiemy
+    // że track ma do końca naturalDuration - currentTime, plus pozostałe pętle).
+    // Używane przez resumeSession do odbudowy fade-out timera na bazie
+    // aktualnego audio.currentTime, bez konieczności re-derywowania
+    // (durationMs, rate, loopCount) → totalEffectiveMs po raz drugi.
+    function scheduleFadeOutFromRemaining(audio, fadeOutMs, remainingWallMs) {
+        if (!audio) return;
+        if (typeof fadeOutMs !== 'number' || fadeOutMs <= 0) return;
+        if (typeof remainingWallMs !== 'number' || remainingWallMs <= 0) return;
+        const fadeStartMs = Math.max(0, remainingWallMs - fadeOutMs);
+        const id = setTimeout(() => {
+            _fadeOutTimers.delete(audio);
+            fadeAudio(audio, audio.volume || 0, 0, fadeOutMs);
+        }, fadeStartMs);
+        _fadeOutTimers.set(audio, id);
     }
 
     // scheduleFadeOut: setTimeout planowany na początku grania tracka,
@@ -1207,6 +1251,93 @@ window.meditationPlayer = window.medytaoAudio;
                 }
             }
             sessions.delete(sessionId);
+        },
+
+        // pauseSession: in-place wstrzymanie sesji bez teardownu. Zachowujemy
+        // wszystkie audio elementy z ich currentTime, scheduledOverlays
+        // pozostają w arrayu (przy resume są tylko play()'owane, nie tworzone
+        // od nowa). Anulujemy: pending future-triggery (setTimeout), zaplanowane
+        // fadeOuty (setTimeout w wall-clock — jeśli pauza będzie dłuższa niż
+        // do końca tracka, odpaliłby się i wyciszył audio na 0 zanim user
+        // kliknie Resume). RAF fade-y nie anulujemy — audio jest pauzowane,
+        // więc aktualizacje volume nie są słyszalne; po końcu rampu volume
+        // siedzi na docelowym targecie i resume kontynuuje od niego.
+        pauseSession(sessionId) {
+            const s = sessions.get(sessionId);
+            if (!s) return;
+            for (const state of s.layers) {
+                if (state.scheduledTimers) {
+                    for (const id of state.scheduledTimers) clearTimeout(id);
+                    state.scheduledTimers = [];
+                }
+                state.scheduledPending = 0;
+                if (state.audio) {
+                    clearFadeOut(state.audio);
+                    try { state.audio.pause(); } catch { /* noop */ }
+                }
+                if (state.scheduledOverlays) {
+                    for (const o of state.scheduledOverlays) {
+                        clearFadeOut(o.audio);
+                        try { o.audio.pause(); } catch { /* noop */ }
+                    }
+                }
+            }
+            console.debug('[medytaoPlayer] pauseSession', { sessionId });
+        },
+
+        // resumeSession: in-place wznowienie po pauseSession. Dla każdej
+        // warstwy:
+        //   1) Sequenced state.audio — play() + reschedule fadeOut na bazie
+        //      audio.currentTime, playsLeft i naturalDuration tracka.
+        //   2) Aktywne overlay-e — play() + reschedule fadeOut (overlay = 1
+        //      pętla, więc remaining = naturalDuration - currentTime*1000).
+        //      Track znajdujemy po trackId w state.scheduledTracks.
+        //   3) Future-triggery — scheduleAnchoredTracks(masterClockMs) z filtrem
+        //      wykluczającym trackId-ki już aktywne w scheduledOverlays, żeby
+        //      "past-but-active" branch ich nie odpalił po raz drugi.
+        // Brak ramp fade-in przy wznawianiu — audio.volume zostaje takie
+        // jakie było w momencie pauzy (target z poprzedniego applyFadeIn).
+        resumeSession(sessionId, masterClockMs) {
+            const s = sessions.get(sessionId);
+            if (!s) return;
+            const baselineMs = (typeof masterClockMs === 'number' && masterClockMs > 0) ? masterClockMs : 0;
+            for (const state of s.layers) {
+                // 1) Sequenced
+                if (state.audio) {
+                    const track = state.tracks[state.index];
+                    if (track && track.loopCount !== 0) {
+                        const naturalMs = track.durationMs || 0;
+                        if (naturalMs > 0) {
+                            const rate = (typeof track.playbackRate === 'number' && track.playbackRate > 0) ? track.playbackRate : 1.0;
+                            const audioElapsedMs = (state.audio.currentTime || 0) * 1000;
+                            const currentLoopRemainingWall = (naturalMs - audioElapsedMs) / rate;
+                            const additionalLoops = Math.max(0, (state.playsLeft || 1) - 1);
+                            const remainingWallMs = Math.max(0, currentLoopRemainingWall) + additionalLoops * (naturalMs / rate);
+                            scheduleFadeOutFromRemaining(state.audio, track.fadeOutMs, remainingWallMs);
+                        }
+                    }
+                    try { state.audio.play().catch(err => console.warn('Medytao player: resume sequenced play failed', err)); } catch { /* noop */ }
+                }
+
+                // 2) Aktywne overlay-e
+                const triggeredIds = new Set();
+                if (state.scheduledOverlays) {
+                    for (const o of state.scheduledOverlays) {
+                        triggeredIds.add(o.trackId);
+                        const track = (state.scheduledTracks || []).find(t => t.trackId === o.trackId);
+                        if (track && track.loopCount !== 0 && track.durationMs > 0) {
+                            const audioElapsedMs = (o.audio.currentTime || 0) * 1000;
+                            const remainingWallMs = Math.max(0, track.durationMs - audioElapsedMs);
+                            scheduleFadeOutFromRemaining(o.audio, track.fadeOutMs, remainingWallMs);
+                        }
+                        try { o.audio.play().catch(err => console.warn('Medytao player: resume overlay play failed', err)); } catch { /* noop */ }
+                    }
+                }
+
+                // 3) Future + nowe past-but-active (nie odpalające ponownie aktywnych)
+                scheduleAnchoredTracks(state, baselineMs, triggeredIds);
+            }
+            console.debug('[medytaoPlayer] resumeSession', { sessionId, masterClockMs: baselineMs });
         },
 
         getProgress(sessionId) {

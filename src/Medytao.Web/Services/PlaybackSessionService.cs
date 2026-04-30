@@ -82,13 +82,16 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     /// <summary>
     /// Czy aktualnie gra dźwięk (sesja JS żywa, nie spauzowana). False zarówno
     /// gdy nic nie startowało, jak i gdy user spauzował (wtedy <see cref="IsPaused"/>=true).
+    /// W wariancie in-place pause sesja JS-owa żyje także podczas pauzy, więc
+    /// <c>_sessionId</c> nie jest wystarczającym wyznacznikiem — dorzucamy
+    /// guard na <c>_pausedAtMs</c>.
     /// </summary>
-    public bool IsPlaying => _sessionId is not null;
+    public bool IsPlaying => _sessionId is not null && _pausedAtMs is null;
 
     /// <summary>
-    /// Czy sesja jest spauzowana. JS-owej sesji nie ma (zrobiliśmy teardown
-    /// żeby zatrzymać dźwięk), ale C# pamięta pozycję i medytację, więc
-    /// <see cref="ResumeAsync"/> wznowi od tego miejsca.
+    /// Czy sesja jest spauzowana. Sesja JS-owa żyje (audio elementy
+    /// z zachowanym currentTime, scheduledOverlays w stanie wstrzymanym),
+    /// a <see cref="ResumeAsync"/> ją wznawia bez restartu.
     /// </summary>
     public bool IsPaused => _pausedAtMs is not null;
 
@@ -316,39 +319,52 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Zamraża sesję na bieżącej pozycji. MVP wariant: pełny teardown JS-owej
-    /// sesji (audio, scheduled timers, fade timers) + zapis <c>_pausedAtMs</c>
-    /// w C#. <see cref="ResumeAsync"/> wystartuje JS-a od nowa z tej pozycji
-    /// używając istniejącego mechanizmu fast-forward w <c>startSession</c>.
-    /// Cena: ~200ms cisza przy resume (dispose + nowy load). Plus: zero ryzyka
-    /// race-conditions z RAF rampami i scheduled timeoutami.
-    /// No-op gdy nic nie gra albo już spauzowane.
+    /// In-place pauza sesji. JS-owy <c>pauseSession</c> tylko wstrzymuje audio
+    /// (audio.pause + clearTimeout dla scheduled-triggerów i fade-outów),
+    /// elementy zostają żywe — przy <see cref="ResumeAsync"/> tylko
+    /// audio.play() i reschedule. <c>_sessionId</c> zachowujemy (sesja JS
+    /// nie znika), zatrzymujemy progress timer i zapisujemy zamrożoną
+    /// pozycję na master-clocku. No-op gdy nic nie gra albo już spauzowane.
     /// </summary>
     public async Task PauseAsync()
     {
         if (_sessionId is null || _pausedAtMs is not null) return;
         var elapsed = ElapsedMs;
-        await TeardownJsSessionAsync();
-        // _meditationId zostawiamy świadomie — karta na liście medytacji ma
-        // dalej być podświetlona jako "ta jest aktualnie wybrana", a UI
-        // edytora odróżnia "gra" od "spauzowana" po IsPaused.
+        StopProgressTimer();
+        try { await _js.InvokeVoidAsync("medytaoPlayer.pauseSession", _sessionId); }
+        catch (Exception ex)
+        {
+            try { await _js.InvokeVoidAsync("console.error", "[PlaybackSession] pauseSession failed", ex.Message); } catch { }
+        }
         _pausedAtMs = elapsed;
         OnChanged?.Invoke();
     }
 
     /// <summary>
-    /// Wznawia z zapamiętanej pozycji. Używa <see cref="StartAsync"/> z
-    /// <c>startFromMs = _pausedAtMs</c> — to ten sam mechanizm fast-forward
-    /// co przy seeku. No-op gdy nie ma czego wznawiać (brak pauzy lub brak
-    /// referencji do medytacji).
+    /// In-place wznowienie. Cofamy <c>_sessionStartedAt</c> tak, żeby
+    /// <see cref="ElapsedMs"/> kontynuował od zamrożonej wartości, a JS
+    /// dostaje <c>resumeSession</c> z bieżącym master-clockiem — odbudowuje
+    /// fadeOuty na bazie audio.currentTime i re-schedule-uje pending
+    /// triggery (z guardem na trackId-ki już-grające jako overlay).
     /// </summary>
     public async Task ResumeAsync()
     {
-        if (_pausedAtMs is null || _lastMeditation is null) return;
+        if (_pausedAtMs is null || _sessionId is null) return;
         var resumeFrom = _pausedAtMs.Value;
         _pausedAtMs = null;
-        // StartAsync sam emituje OnChanged po udanym starcie — nie duplikujemy.
-        await StartAsync(_lastMeditation, resumeFrom);
+        // Cofnięcie master-clocka tak, by ElapsedMs kontynuował od resumeFrom.
+        _sessionStartedAt = DateTimeOffset.UtcNow.AddMilliseconds(-resumeFrom);
+        // _sessionRestartedAt odświeżamy, żeby 2-sekundowy guard auto-stop'a
+        // (zob. OnProgressTick) nie ucinał sesji od razu, gdyby wszystkie
+        // warstwy momentarnie raportowały Finished tuż po resume.
+        _sessionRestartedAt = DateTimeOffset.UtcNow;
+        try { await _js.InvokeVoidAsync("medytaoPlayer.resumeSession", _sessionId, resumeFrom); }
+        catch (Exception ex)
+        {
+            try { await _js.InvokeVoidAsync("console.error", "[PlaybackSession] resumeSession failed", ex.Message); } catch { }
+        }
+        StartProgressTimer();
+        OnChanged?.Invoke();
     }
 
     /// <summary>
