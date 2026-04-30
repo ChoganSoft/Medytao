@@ -286,8 +286,8 @@ window.meditationPlayer = window.medytaoAudio;
 // Time-anchored triggery (track ze StartAtMs):
 //   Text   → interrupt: nowy fragment hard-cut wycina poprzedni audio w warstwie.
 //   Fx     → overlay: nowy akcent gra równolegle do tego, co już leci.
-//   Music  → crossfade: stary fade-out, nowy fade-in (czas z track.fadeInMs lub
-//            DEFAULT_CROSSFADE_MS = 1500).
+//   Music  → crossfade: stary fade-out, nowy fade-in (czas z track.crossfadeMs;
+//            0 = hard cut, default 3000 podsuwany w UI przy aktywacji time-anchored).
 //   Nature → jak Music.
 
 (function () {
@@ -813,7 +813,7 @@ window.meditationPlayer = window.medytaoAudio;
     // Trigger time-anchored tracka w warstwie crossfade (Music/Nature).
     // Aktualnie grający track w warstwie (sequenced state.audio lub ostatni
     // overlay z poprzedniego crossfade) — fade-out. Nowy track — fade-in.
-    // Czas fade-u: track.fadeInMs jeśli >0, inaczej DEFAULT_CROSSFADE_MS.
+    // Czas fade-u: track.crossfadeMs (0 = hard cut, bez fade'u).
     //
     // Sequenced sequence po fade-out NIE wraca — state.audio = null oznacza
     // koniec sekwencji w tej warstwie. Po końcu nowego time-anchored
@@ -840,15 +840,15 @@ window.meditationPlayer = window.medytaoAudio;
 
         const graph = buildTrackGraph(state, audio, track.reverbMix || 0);
 
-        // Crossfade duration: priorytet "Crossfade to next" (track.crossfadeMs)
-        // bo to nazwa pola w UI najbliższa pojęciu "ile trwa przejście do
-        // tego trackca". W razie 0/undefined fallback na "Fade in" (też
-        // intuicyjny — "ile się rozpędza"), a na końcu DEFAULT_CROSSFADE_MS.
+        // Crossfade duration prosto z "Crossfade to next" (track.crossfadeMs).
+        // Brak fallback na fadeInMs ani DEFAULT — gdy user explicite ustawi 0,
+        // szanujemy to (hard cut: stary disposed natychmiast, nowy startuje
+        // od pełnego volume). Domyślna wartość 3000 ms dla świeżo aktywowanego
+        // time-anchored Music/Nature jest podsuwana w UI (TrackCard.OnStartAtToggle),
+        // więc field zawsze pokazuje wartość, która faktycznie zadziała.
         const fadeMs = (typeof track.crossfadeMs === 'number' && track.crossfadeMs > 0)
             ? track.crossfadeMs
-            : (typeof track.fadeInMs === 'number' && track.fadeInMs > 0)
-                ? track.fadeInMs
-                : DEFAULT_CROSSFADE_MS;
+            : 0;
 
         // Stary aktywny: najpierw sequenced, w razie braku — ostatni overlay
         // (poprzedni crossfade). Capture refs lokalnie, żeby setTimeout
@@ -914,12 +914,6 @@ window.meditationPlayer = window.medytaoAudio;
         const t = String(layerType).toLowerCase();
         return t === 'text' || t === 'music' || t === 'nature';
     }
-
-    // Domyślny czas crossfade-u gdy track.crossfadeMs i track.fadeInMs == 0.
-    // 3000 ms to dostatecznie długie przejście, żeby nie było wyraźnego
-    // skoku, ale nie tak długie żeby user czekał. User może nadpisać
-    // przez "Crossfade to next" (priorytet) lub "Fade in" w expanded panel.
-    const DEFAULT_CROSSFADE_MS = 3000;
 
     // Płynna zmiana audio.volume przez requestAnimationFrame. RAF
     // synchronizuje z VSync browsera, więc fade jest gładki bez

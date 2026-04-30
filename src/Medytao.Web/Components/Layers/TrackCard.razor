@@ -386,6 +386,18 @@
     private async Task OnStartAtToggle(ChangeEventArgs e)
     {
         _startAtEnabled = e.Value is bool b && b;
+        // Aktywacja time-anchored w warstwie crossfade (Music/Nature) z
+        // _crossfadeMs == 0 → podsuwamy 3000 ms jako sensowną wartość startową.
+        // Bez tego user widzi dopiero co odsłonięte pole "Crossfade to next"
+        // z 0 ms i scheduled track wjeżdża hard-cutem (bo silnik szanuje 0).
+        // Analogicznie do auto-set 0.3 dla reverbu przy aktywacji w warstwie
+        // gdzie wcześniej był 0.
+        if (_startAtEnabled && _crossfadeMs == 0
+            && (string.Equals(LayerType, "Music", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(LayerType, "Nature", StringComparison.OrdinalIgnoreCase)))
+        {
+            _crossfadeMs = 3000;
+        }
         await PersistAsync();
         await OnChanged.InvokeAsync();
     }
@@ -444,8 +456,8 @@
 
     private string StartAtNoteTitle() => LayerType?.ToLowerInvariant() switch
     {
-        "music" => "Crossfade duration uses 'Crossfade to next' (or 'Fade in' as fallback, default 3s)",
-        "nature" => "Crossfade duration uses 'Crossfade to next' (or 'Fade in' as fallback, default 3s)",
+        "music" => "Crossfade duration set in 'Crossfade to next' below (0 = hard cut)",
+        "nature" => "Crossfade duration set in 'Crossfade to next' below (0 = hard cut)",
         _ => ""
     };
 
