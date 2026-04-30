@@ -37,12 +37,36 @@
         <div class="meditation-grid">
             @foreach (var m in _meditations)
             {
-                var isPlayingThis = Playback.CurrentMeditationId == m.Id;
+                var isActiveCard = Playback.CurrentMeditationId == m.Id;
+                var isPlayingCard = isActiveCard && Playback.IsPlaying;
+                var isPausedCard = isActiveCard && Playback.IsPaused;
                 var isLoadingThis = _loadingId == m.Id;
-                var fill = isPlayingThis ? OverallFraction() : 0d;
-                var dashoffset = RingCircumference - (fill * RingCircumference);
+                @* Total trzymamy z m.DurationMs (prepocomputed po stronie API).
+                   Dla aktywnej karty preferujemy aktualny GetOverallProgress.Total
+                   z silnika, gdy m.DurationMs == 0 (asset bez metadanych
+                   w bazie, ale silnik pobrał durationy lazy w startSession). *@
+                var totalMs = m.DurationMs;
+                if (isActiveCard && totalMs <= 0)
+                {
+                    var live = Playback.GetOverallProgress();
+                    totalMs = (int)Math.Round(live.Total);
+                }
+                var displayMs = isActiveCard
+                    ? (_seekDragId == m.Id && _seekDragMs.HasValue ? _seekDragMs.Value : Playback.ElapsedMs)
+                    : 0d;
+                var fillPct = totalMs > 0 ? Math.Clamp(displayMs / totalMs, 0, 1) * 100 : 0;
 
-                <div class="meditation-card @(isPlayingThis ? "playing" : "")">
+                <div class="meditation-card @(isActiveCard ? "playing" : "")">
+                    @* Edit + Delete w prawym górnym rogu — z nową dolną częścią
+                       karty (player-bar) miejsce w prawym dolnym rogu jest zajęte
+                       przez kontrolki odtwarzacza. *@
+                    <div class="card-actions-top">
+                        <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
+                        <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">
+                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                        </button>
+                    </div>
+
                     <div class="card-header">
                         <div class="card-avatar">
                             <img src="img/meditation-avatar.png" alt="" />
@@ -74,6 +98,11 @@
                             {
                                 <div class="card-desc">@m.Description</div>
                             }
+                            @* Meta info (czas trwania + data utworzenia) pod description.
+                               Wcześniej żyło jako absolute footer w prawym dolnym rogu —
+                               przeniesione tutaj, bo dolna część karty należy teraz do
+                               odtwarzacza. *@
+                            <div class="card-desc-meta">@FormatDuration(m.DurationMs) · @m.CreatedAt.ToString("MMM d, yyyy")</div>
                         </div>
                     </div>
 
@@ -88,37 +117,49 @@
                         }
                     </div>
 
-                    <div class="card-footer-meta">@FormatDuration(m.DurationMs) · @m.CreatedAt.ToString("MMM d, yyyy")</div>
-
-                    <div class="card-actions">
-                        <div class="play-btn-ring" title="@(isPlayingThis ? "Stop" : "Play")">
-                            <svg class="play-ring" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                                <circle class="ring-bg" cx="16" cy="16" r="13" />
-                                <circle class="ring-fill @(isPlayingThis ? "active" : "")"
-                                        cx="16" cy="16" r="13"
-                                        style="stroke-dasharray: @RingCircumferenceCss; stroke-dashoffset: @dashoffset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
-                            </svg>
-                            <button class="play-btn @(isPlayingThis ? "playing" : "")"
+                    @* Zintegrowany odtwarzacz: białe tło, kontrolki Play/Pause + Stop
+                       wyśrodkowane na górze, pod nimi pasek postępu z timy po bokach
+                       (Spotify-style). Stop jest zawsze widoczny — disabled gdy karta
+                       nie jest aktywną sesją (parytet z UI w MeditationEditor). *@
+                    <div class="player-bar">
+                        <div class="player-controls">
+                            <button class="player-btn @(isPlayingCard ? "playing" : "")"
                                     @onclick="() => TogglePlay(m)"
-                                    disabled="@isLoadingThis">
+                                    disabled="@isLoadingThis"
+                                    title="@(isPlayingCard ? "Pause" : (isPausedCard ? "Resume" : "Play"))">
                                 @if (isLoadingThis)
                                 {
                                     <span class="spinner"></span>
                                 }
-                                else if (isPlayingThis)
+                                else if (isPlayingCard)
                                 {
-                                    <text>◼</text>
+                                    <span class="player-glyph">⏸</span>
                                 }
                                 else
                                 {
-                                    <text>▶</text>
+                                    <span class="player-glyph">▶</span>
                                 }
                             </button>
+                            <button class="player-stop-btn"
+                                    @onclick="StopPlay"
+                                    disabled="@(!isActiveCard)"
+                                    title="Stop">
+                                <span class="player-glyph">◼</span>
+                            </button>
                         </div>
-                        <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
-                        <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">
-                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                        </button>
+                        <div class="player-progress">
+                            <span class="player-time">@FormatMs(displayMs)</span>
+                            <input type="range" min="0"
+                                   max="@(totalMs > 0 ? totalMs : 1).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                   step="100"
+                                   value="@displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture)"
+                                   @oninput="e => OnSeekDrag(m.Id, double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                                   @onchange="e => OnSeekRelease(m, double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                                   class="medytao-slider player-slider"
+                                   style="--slider-fill: @fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%"
+                                   disabled="@(!isActiveCard || totalMs <= 0)" />
+                            <span class="player-time">@FormatMs(totalMs)</span>
+                        </div>
                     </div>
                 </div>
             }
@@ -204,6 +245,13 @@
     private Guid? _loadingId;
     private MeditationSummaryDto? _deletingMeditation;
     private bool _deleting;
+    // Drag-only preview pozycji na pasku postępu — żeby suwak płynnie nadążał
+    // za myszą bez restartowania sesji co piksel. Faktyczny SeekAsync leci
+    // dopiero w @onchange (release). _seekDragId trzyma id karty, na której
+    // user drag'uje, żeby StateHasChanged z OnChanged (tick co 250ms) nie
+    // nadpisał wartości na wszystkich pozostałych kartach.
+    private Guid? _seekDragId;
+    private double? _seekDragMs;
 
     // Ikony zgodne z edytorem (LayerDisplayOrder) — Text → Music → Nature → Fx.
     private static readonly (string Key, string Icon)[] LayerCategories =
@@ -213,9 +261,6 @@
         ("Nature", "fa-solid fa-wind"),
         ("Fx", "fa-solid fa-drum"),
     };
-
-    private const double RingCircumference = 81.68;
-    private const string RingCircumferenceCss = "81.68";
 
     protected override async Task OnInitializedAsync()
     {
@@ -272,18 +317,30 @@
         Playback.OnChanged -= HandlePlaybackChanged;
     }
 
-    private double OverallFraction()
-    {
-        var p = Playback.GetOverallProgress();
-        return p.Total > 0 ? Math.Clamp(p.Current / p.Total, 0, 1) : 0;
-    }
-
+    // TogglePlay obsługuje wszystkie trzy stany karty:
+    //   1) karta aktywna + gra → Pause
+    //   2) karta aktywna + pauza → Resume
+    //   3) karta nieaktywna → załaduj DTO i Start (poprzednia sesja, jeśli była,
+    //      jest zatrzymywana wewnątrz StartAsync — idempotentna ścieżka).
+    // Stop ma osobny przycisk (StopPlay), żeby user nie zatrzymywał sesji
+    // przypadkiem przez "główny" guzik karty.
     private async Task TogglePlay(MeditationSummaryDto m)
     {
         if (Playback.CurrentMeditationId == m.Id)
         {
-            await Playback.StopAsync();
-            return;
+            if (Playback.IsPlaying)
+            {
+                await Playback.PauseAsync();
+                return;
+            }
+            if (Playback.IsPaused)
+            {
+                await Playback.ResumeAsync();
+                return;
+            }
+            // Edge case: CurrentMeditationId wskazuje tę kartę, ale ani nie gra,
+            // ani nie jest spauzowana — sesja zakończyła się sama (auto-stop
+            // po Finished). Wpadamy w gałąź "fresh start" poniżej.
         }
         if (_loadingId is not null) return;
         _loadingId = m.Id;
@@ -298,6 +355,38 @@
         {
             _loadingId = null;
         }
+    }
+
+    private Task StopPlay() => Playback.StopAsync();
+
+    // Drag = tylko preview (zapamiętujemy karta+ms, żeby slider płynął, ale
+    // audio zostaje na bieżącej pozycji). Release = faktyczny SeekAsync
+    // i czyścimy preview state. _seekDragId steruje którą kartę "okłamujemy"
+    // wartością display (pozostałe karty czytają z Playback.ElapsedMs jak
+    // zwykle), żeby drag na karcie A nie wpływał na kartę B.
+    private void OnSeekDrag(Guid meditationId, double ms)
+    {
+        _seekDragId = meditationId;
+        _seekDragMs = ms;
+    }
+
+    private async Task OnSeekRelease(MeditationSummaryDto m, double ms)
+    {
+        _seekDragId = null;
+        _seekDragMs = null;
+        if (Playback.CurrentMeditationId != m.Id) return;
+        await Playback.SeekAsync(ms);
+    }
+
+    // Format mm:ss z zaokrągleniem w dół do sekundy. Używamy w obu czasach
+    // (current i total). Negatywne / NaN wartości obsłużone przez Max(0).
+    private static string FormatMs(double ms)
+    {
+        if (double.IsNaN(ms) || ms < 0) ms = 0;
+        var totalSec = (int)(ms / 1000);
+        var m = totalSec / 60;
+        var s = totalSec % 60;
+        return $"{m}:{s:00}";
     }
 
     private void CreateNew()
@@ -374,7 +463,12 @@
         background: var(--color-background-primary);
         border: 1px solid var(--color-border-tertiary);
         border-radius: 10px;
-        padding: 24px 28px 68px;
+        /* padding-bottom: 0 — ostatnim elementem jest player-bar z własnym
+           tłem i paddingiem, sięga do samego dolnego krawędzi karty.
+           Padding-right zwiększony na 64px, żeby dłuższe wartości meta
+           (np. "Uncategorized") nie wchodziły pod ikony edit/delete
+           pinned do prawego górnego rogu. */
+        padding: 24px 28px 0;
         overflow: hidden;
         transition: border-color 0.15s, box-shadow 0.15s;
     }
@@ -451,67 +545,109 @@
         min-width: 14px; text-align: center;
     }
 
-    .card-footer-meta {
+    /* Meta info (czas trwania + data utworzenia) wpisana pod description
+       w meta-rows. Stylem przypomina stary card-footer-meta (szary, mały),
+       ale teraz jest częścią flow zamiast absolute pinem do dolnej krawędzi. */
+    .card-desc-meta {
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+        margin-top: 8px;
+    }
+
+    /* Edit + Delete pinowane do prawego górnego rogu karty. Player-bar w dolnej
+       części zajmuje cały szeroki pas, więc akcje karty nie mieszczą się już
+       w bottom-right jak wcześniej. */
+    .card-actions-top {
         position: absolute;
-        bottom: 22px; left: 28px;
-        font-size: 12px; color: var(--color-text-tertiary);
-        max-width: calc(100% - 180px);
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        top: 14px; right: 20px;
+        display: flex; align-items: center; gap: 4px;
+        z-index: 1;
     }
 
-    .card-actions {
-        position: absolute;
-        bottom: 14px; right: 20px;
-        display: flex; align-items: center; gap: 6px;
+    /* ── Zintegrowany odtwarzacz ────────────────────────────────────────── */
+    /* player-bar to ostatni element karty — dzięki padding-bottom:0 na
+       .meditation-card i overflow:hidden + border-radius dolne rogi się
+       ładnie zaokrąglają. Negatywne marginesy boczne wyrównują na pełną
+       szerokość karty (negują padding 28px), tak samo jak gold-bar. */
+    .player-bar {
+        background: var(--color-background-primary);
+        margin: 0 -28px;
+        padding: 14px 28px 16px;
+        border-top: 1px solid var(--color-border-tertiary);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
-
-    .play-btn-ring {
-        position: relative;
-        width: 40px; height: 40px;
-        display: inline-flex; align-items: center; justify-content: center;
+    .player-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 12px;
     }
-    .play-ring {
-        position: absolute; inset: 0;
-        width: 40px; height: 40px;
-        transform: rotate(-90deg);
-        pointer-events: none;
-    }
-    .play-ring .ring-bg {
-        fill: none;
-        stroke: var(--color-border-tertiary);
-        stroke-width: 2.5;
-        opacity: 0.5;
-    }
-    .play-ring .ring-fill {
-        fill: none;
-        stroke: var(--color-text-info);
-        stroke-width: 2.5;
-        stroke-linecap: round;
-        transition: stroke-dashoffset 0.18s linear;
-    }
-    .play-ring .ring-fill.active { opacity: 1; }
-
-    .play-btn {
-        position: relative;
-        width: 28px; height: 28px;
-        border: none; background: transparent;
-        color: var(--color-text-secondary);
+    .player-btn, .player-stop-btn {
+        width: 36px; height: 36px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
         border-radius: 50%;
         cursor: pointer;
-        font-size: 13px; line-height: 1;
+        line-height: 1;
         display: inline-flex; align-items: center; justify-content: center;
         padding: 0;
-        transition: background 0.15s, color 0.15s;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-    .play-btn:hover:not(:disabled) {
+    .player-btn:hover:not(:disabled),
+    .player-stop-btn:hover:not(:disabled) {
         background: var(--color-background-secondary);
-        color: var(--color-text-primary);
+        border-color: var(--color-border-primary);
     }
-    .play-btn.playing {
+    /* Stan "gra" — kolorowe wypełnienie, żeby było czytelne która karta
+       jest aktywna (parytet z .meditation-card.playing border accent). */
+    .player-btn.playing {
         background: var(--color-text-info);
         color: var(--color-background-primary);
+        border-color: var(--color-text-info);
     }
-    .play-btn:disabled { cursor: default; opacity: 0.7; }
+    .player-btn:disabled,
+    .player-stop-btn:disabled {
+        cursor: default;
+        opacity: 0.4;
+    }
+    .player-glyph {
+        font-size: 13px;
+        line-height: 1;
+        /* Trójkąt i pauza wycentrowane optycznie — Play (▶) ma asymetryczny
+           bounding box, lekkie przesunięcie w prawo daje czytelniejszy efekt. */
+        display: inline-block;
+    }
+    .player-btn .player-glyph { transform: translateX(1px); }
+    .player-btn.playing .player-glyph { transform: translateX(0); }
+
+    /* Pasek postępu Spotify-style: czas — slider — czas. Tabular-nums
+       trzymają stałą szerokość kolumny czasu, suwak nie skacze przy zmianie
+       9:59 → 10:00. */
+    .player-progress {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .player-time {
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        font-variant-numeric: tabular-nums;
+        min-width: 36px;
+        text-align: center;
+    }
+    .player-slider {
+        flex: 1;
+    }
+    /* Disabled slider — szary thumb, fill na 0%, kursor not-allowed.
+       Dla nieaktywnych kart pokazuje "pasek istnieje, ale nie ma czego
+       scrubować — kliknij Play". */
+    .player-slider:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 
     .edit-btn, .delete-btn {
         width: 36px; height: 36px;
