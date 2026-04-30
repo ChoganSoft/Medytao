@@ -506,7 +506,7 @@ window.meditationPlayer = window.medytaoAudio;
 
         // Detach previous listener if reusing element (we don't — fresh each time).
         const audio = createAudio(track.url);
-        audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
+        const targetVol = effectiveVolume(state.layerVolume, track.volume, state.muted);
         applyRate(audio, track.playbackRate);
 
         // Jeśli weszliśmy w track po seeku, ustawiamy currentTime na offset.
@@ -539,6 +539,11 @@ window.meditationPlayer = window.medytaoAudio;
         if (startOffsetSec > 0) {
             try { audio.currentTime = startOffsetSec; } catch { /* noop */ }
         }
+
+        // FadeIn: jeśli track.fadeInMs > 0, applyFadeIn ustawi volume=0
+        // i ramp do targetVol. FadeOut: setTimeout na koniec ostatniego loopa.
+        applyFadeIn(audio, targetVol, track.fadeInMs);
+        scheduleFadeOut(audio, track.fadeOutMs, track.durationMs, trackRate, track.loopCount);
 
         audio.play().catch(err => console.warn('Medytao player: play failed', err));
     }
@@ -605,6 +610,10 @@ window.meditationPlayer = window.medytaoAudio;
 
     function disposeAudio(audio) {
         if (!audio) return;
+        // Anuluj zaplanowany fadeOut żeby nie odpalił się na disposowanym
+        // elemencie (i nie utrzymywał referencji w setTimeout do audio
+        // przez czas fadeStart).
+        clearFadeOut(audio);
         try {
             audio.pause();
             audio.src = '';
@@ -754,7 +763,7 @@ window.meditationPlayer = window.medytaoAudio;
         }
 
         const audio = createAudio(track.url);
-        audio.volume = effectiveVolume(state.layerVolume, track.volume, state.muted);
+        const targetVol = effectiveVolume(state.layerVolume, track.volume, state.muted);
         const rate = (typeof track.playbackRate === 'number' && track.playbackRate > 0) ? track.playbackRate : 1.0;
         applyRate(audio, rate);
 
@@ -782,6 +791,14 @@ window.meditationPlayer = window.medytaoAudio;
         audio.addEventListener('ended', onEnded);
 
         state.scheduledOverlays.push({ trackId: track.trackId, audio, graph: overlayGraph });
+        // FadeIn (jeśli ustawione) + scheduleFadeOut. Po seeku z offsetMs > 0
+        // fadeIn ma sens jako "in-medias-res rozjazd" — pozostaje nawet gdy
+        // weszliśmy w środku tracka, krótki ramp łagodzi twardy start.
+        // FadeOut planowany od bieżącego currentTime — totalEffectiveMs to
+        // czas od początku audio, więc dla offset>0 pozostaje za dużo, ale
+        // to akceptowalna nieprecyzja dla overlay (one-shot).
+        applyFadeIn(audio, targetVol, track.fadeInMs);
+        scheduleFadeOut(audio, track.fadeOutMs, track.durationMs, rate, track.loopCount);
         audio.play().catch(err => console.warn('Medytao player: overlay play failed', err));
 
         console.debug('[medytaoPlayer] overlay triggered',
@@ -843,6 +860,10 @@ window.meditationPlayer = window.medytaoAudio;
         const oldAudio = oldSequenced || (oldOverlay && oldOverlay.audio);
 
         if (oldAudio) {
+            // Anuluj zaplanowany fadeOut na starym audio — inaczej dwie pętle
+            // RAF (ten fadeAudio crossfade-out + zaplanowany scheduleFadeOut)
+            // konkurowałyby o audio.volume z różnymi targetami.
+            clearFadeOut(oldAudio);
             const startVol = oldAudio.volume;
             fadeAudio(oldAudio, startVol, 0, fadeMs, () => {
                 disposeAudio(oldAudio);
@@ -856,7 +877,9 @@ window.meditationPlayer = window.medytaoAudio;
             });
         }
 
-        // Nowy fade-in: zaczyna od 0, ramp do targetVol.
+        // Nowy fade-in: zaczyna od 0, ramp do targetVol. To SAM crossfade,
+        // dlatego nie wołamy applyFadeIn — track.fadeInMs jest tu nieistotne
+        // (i tak fade-in trwa fadeMs == crossfade duration).
         audio.volume = 0;
 
         const onEnded = () => {
@@ -869,6 +892,10 @@ window.meditationPlayer = window.medytaoAudio;
         state.scheduledOverlays.push({ trackId: track.trackId, audio, graph });
         audio.play().catch(err => console.warn('Medytao player: crossfade play failed', err));
         fadeAudio(audio, 0, targetVol, fadeMs);
+        // FadeOut planujemy na końcu nowego tracka. Jeśli następny scheduled
+        // przyjdzie przed jego końcem, kolejny triggerCrossfade clearFadeOut
+        // ten timer i zrobi crossfade-out wcześniej.
+        scheduleFadeOut(audio, track.fadeOutMs, track.durationMs, rate, track.loopCount);
 
         console.debug('[medytaoPlayer] crossfade triggered',
             { layerId: state.layerId, layerType: state.layerType,
@@ -923,6 +950,62 @@ window.meditationPlayer = window.medytaoAudio;
             }
         };
         requestAnimationFrame(tick);
+    }
+
+    // Per-Track fade-in/out timery — WeakMap żeby anulowanie było tożsame
+    // z disposem audio (GC sprząta). Klucz = HTMLAudioElement, wartość =
+    // setTimeout id zaplanowanego fade-outu. fade-in nie potrzebuje tracking-u
+    // bo odpala się natychmiast przez requestAnimationFrame i nie ma czego anulować.
+    const _fadeOutTimers = new WeakMap();
+
+    // applyFadeIn: jeśli fadeInMs > 0 startujemy od volume=0 i ramp-ujemy
+    // do targetVol; inaczej ustawiamy targetVol bezpośrednio. Wywoływane
+    // po audio.play() (volume na <audio> przed play to default 1.0,
+    // applyFadeIn natychmiast korygowuje).
+    function applyFadeIn(audio, targetVol, fadeInMs) {
+        if (!audio) return;
+        if (typeof fadeInMs !== 'number' || fadeInMs <= 0) {
+            try { audio.volume = targetVol; } catch { }
+            return;
+        }
+        try { audio.volume = 0; } catch { }
+        fadeAudio(audio, 0, targetVol, fadeInMs);
+    }
+
+    // scheduleFadeOut: setTimeout planowany na początku grania tracka,
+    // odpala się gdy audio jest blisko końca ostatniego loop-a. Używa
+    // setTimeout (wall-clock) — przy zmianie playbackRate w trakcie
+    // fade timer się rozjedzie, ale to edge case (Speed slider rzadko
+    // ruszany w trakcie). loopCount=0 (forever) → brak fadeOut, bo
+    // track nie ma końca.
+    function scheduleFadeOut(audio, fadeOutMs, naturalDurationMs, rate, loopCount) {
+        if (!audio) return;
+        if (typeof fadeOutMs !== 'number' || fadeOutMs <= 0) return;
+        if (typeof naturalDurationMs !== 'number' || naturalDurationMs <= 0) return;
+        if (loopCount === 0) return; // wieczna pętla — brak końca, brak fadeOut
+
+        const r = (typeof rate === 'number' && rate > 0) ? rate : 1.0;
+        const loops = Math.max(1, loopCount || 1);
+        const totalEffectiveMs = (naturalDurationMs / r) * loops;
+        const fadeStartMs = Math.max(0, totalEffectiveMs - fadeOutMs);
+
+        const id = setTimeout(() => {
+            _fadeOutTimers.delete(audio);
+            // audio mogło zostać disposed (track wycięty crossfade-em
+            // albo session stopped) — fadeAudio sam wykryje brak src
+            // i zakończy bez efektu.
+            fadeAudio(audio, audio.volume || 0, 0, fadeOutMs);
+        }, fadeStartMs);
+        _fadeOutTimers.set(audio, id);
+    }
+
+    function clearFadeOut(audio) {
+        if (!audio) return;
+        const id = _fadeOutTimers.get(audio);
+        if (id !== undefined) {
+            clearTimeout(id);
+            _fadeOutTimers.delete(audio);
+        }
     }
 
     function newSessionId() {
