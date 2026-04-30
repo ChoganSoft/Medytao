@@ -55,6 +55,16 @@
                     ? (_seekDragId == m.Id && _seekDragMs.HasValue ? _seekDragMs.Value : Playback.ElapsedMs)
                     : 0d;
                 var fillPct = totalMs > 0 ? Math.Clamp(displayMs / totalMs, 0, 1) * 100 : 0;
+                @* Pre-formatowane stringi dla inputa range. W jednej linii w atrybucie
+                   Razor traktuje wszystko po pierwszym `)` w `@(...)` jako tekst —
+                   stąd lokalne zmienne, żeby uniknąć subtelnych pułapek typu
+                   max="@(totalMs > 0 ? totalMs : 1).ToString(...)" gdzie ToString
+                   leciał jako literal w atrybucie i przeglądarka fallback'owała
+                   na default max=100 (suwak nie pasował do długości medytacji). *@
+                var sliderMax = totalMs > 0 ? totalMs : 1;
+                var sliderMaxStr = sliderMax.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var sliderValStr = displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+                var sliderFillStr = fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
                 <div class="meditation-card @(isActiveCard ? "playing" : "")">
                     @* Edit + Delete w prawym górnym rogu — z nową dolną częścią
@@ -149,14 +159,20 @@
                         </div>
                         <div class="player-progress">
                             <span class="player-time">@FormatMs(displayMs)</span>
+                            @* @key na bucket'owanej wartości totalMs (granularność 1s)
+                               wymusza Blazor do dropowania starego <input> i tworzenia
+                               świeżego, gdy max się zmieni. Bez tego diff atrybutu max
+                               na żywym sliderze bywał ignorowany przez przeglądarkę
+                               (analogicznie do timeline-slidera w MeditationEditor). *@
                             <input type="range" min="0"
-                                   max="@(totalMs > 0 ? totalMs : 1).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                   max="@sliderMaxStr"
                                    step="100"
-                                   value="@displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture)"
+                                   @key="(m.Id, sliderMax / 1000)"
+                                   value="@sliderValStr"
                                    @oninput="e => OnSeekDrag(m.Id, double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                                    @onchange="e => OnSeekRelease(m, double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
                                    class="medytao-slider player-slider"
-                                   style="--slider-fill: @fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%"
+                                   style="--slider-fill: @sliderFillStr%"
                                    disabled="@(!isActiveCard || totalMs <= 0)" />
                             <span class="player-time">@FormatMs(totalMs)</span>
                         </div>
