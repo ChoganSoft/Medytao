@@ -558,11 +558,10 @@
     .gold-bar {
         display: flex; justify-content: space-around; align-items: center;
         background: #C5A56C;
-        padding: 18px 28px;
-        /* Ujemne marginesy boczne wyciągają pasek na pełną szerokość karty
-           (negują padding 28px). Margin-bottom:0 — odstęp do przycisków jest
-           w całości obsługiwany przez padding-bottom:68px, dzięki czemu
-           przestrzeń nad i pod przyciskami jest symetryczna (po 14px). */
+        /* Pionowe paddingi 12px (z 18px) — pasek jest węższy, karta krótsza
+           o ~12px łącznie. Boki zostają na 28px, bo to negowane ujemnym
+           marginesem dla wyciągnięcia na pełną szerokość karty. */
+        padding: 12px 28px;
         margin: 0 -28px;
     }
     .gold-bar-item {
