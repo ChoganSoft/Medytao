@@ -518,7 +518,9 @@
     .card-status-badge {
         position: absolute;
         top: 4px;
-        left: 4px;
+        /* Ujemna wartość — badge wystaje 6px poza lewą krawędź avatara,
+           dla wyrazistego efektu "wpiętej naklejki". */
+        left: -6px;
         padding: 2px 10px;
         border-radius: 999px;
         font-size: 10px;
