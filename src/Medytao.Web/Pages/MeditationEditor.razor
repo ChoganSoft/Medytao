@@ -26,9 +26,8 @@ else
                 }
                 @* Główny przycisk to toggle Play/Pause (z dodatkowym stanem
                    "Resume" gdy sesja jest spauzowana). Stop jest osobnym
-                   przyciskiem obok i pojawia się tylko gdy w ogóle jest co
-                   zatrzymać (gra ALBO spauzowane), żeby nie zaśmiecać UI
-                   w stanie spoczynku. *@
+                   przyciskiem obok — zawsze w layoucie, żeby UI nie skakało
+                   przy zmianach stanu, a sterujemy tylko enabled/disabled. *@
                 <button class="btn-primary play-toggle @(PlaybackSession.IsPlaying ? "playing" : "")"
                         @onclick="TogglePlayback"
                         disabled="@(!HasAnyTracks)">
@@ -45,14 +44,12 @@ else
                         <span>▶ Play</span>
                     }
                 </button>
-                @if (PlaybackSession.IsActive)
-                {
-                    <button class="btn-secondary stop-btn"
-                            @onclick="StopPlayback"
-                            title="Stop playback">
-                        ◼ Stop
-                    </button>
-                }
+                <button class="btn-secondary stop-btn"
+                        @onclick="StopPlayback"
+                        disabled="@(!PlaybackSession.IsActive)"
+                        title="Stop playback">
+                    ◼ Stop
+                </button>
             </div>
         </div>
 
@@ -436,4 +433,5 @@ else
         border: 1px solid var(--color-border-secondary);
         font-size: 13px; cursor: pointer;
     }
+    .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
