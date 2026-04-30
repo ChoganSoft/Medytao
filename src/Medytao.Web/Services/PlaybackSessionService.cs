@@ -175,6 +175,52 @@ public sealed class PlaybackSessionService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Łączny czas trwania aktywnej medytacji w ms — spójny z <see cref="ElapsedMs"/>
+    /// (ten sam algorytm co <c>ComputeTotalDurationMs</c> w MeditationEditor):
+    /// per warstwa max(suma sequenced * loops, max scheduled endpoint), potem
+    /// max po warstwach. Bez tego karta na liście używałaby <c>MeditationSummaryDto.DurationMs</c>
+    /// (prepocomputed na backendzie z innej formuły) i suwak rozjeżdżałby się
+    /// z master-clockiem — np. lądował na ~90% i tam siedział, bo total był
+    /// mniejszy niż faktyczny czas grania.
+    ///
+    /// Zwraca 0 gdy nic nie zostało załadowane jeszcze (caller decyduje co
+    /// zrobić — np. fallback na DurationMs z DTO lub disabled slider).
+    /// </summary>
+    public double ComputeTotalDurationMs()
+    {
+        if (_lastMeditation is null) return 0;
+        double maxLayerEnd = 0;
+        foreach (var layer in _lastMeditation.Layers)
+        {
+            double seqEnd = 0;
+            double scheduledEnd = 0;
+            foreach (var t in layer.Tracks)
+            {
+                // Asset.DurationMs ?? cache z lazy-fetch w startSession (KnownDuration).
+                var natural = t.Asset.DurationMs ?? KnownDuration(t.Asset.Id) ?? 0;
+                var rate = t.PlaybackRate > 0 ? t.PlaybackRate : 1.0f;
+                var effective = natural / rate;
+                if (t.StartAtMs.HasValue)
+                {
+                    var endpoint = t.StartAtMs.Value + effective;
+                    if (endpoint > scheduledEnd) scheduledEnd = endpoint;
+                }
+                else if (effective > 0)
+                {
+                    // loopCount = 0 (forever) liczymy jako jedna pętla — total nie
+                    // może być nieskończonością, a slider potrzebuje konkretnej
+                    // skali. To samo założenie co w edytorze.
+                    var loops = t.LoopCount == 0 ? 1 : Math.Max(1, t.LoopCount);
+                    seqEnd += effective * (double)loops;
+                }
+            }
+            var layerEnd = Math.Max(seqEnd, scheduledEnd);
+            if (layerEnd > maxLayerEnd) maxLayerEnd = layerEnd;
+        }
+        return maxLayerEnd;
+    }
+
+    /// <summary>
     /// Zagregowany postęp całej medytacji — max(CurrentTime) i max(Duration) po warstwach.
     /// Loopy warstw powodują, że pełna ścisłość jest niemożliwa bez master clocka w JS,
     /// ale "jak daleko jesteśmy względem najdłuższej warstwy" to dobry intuicyjny wskaźnik
