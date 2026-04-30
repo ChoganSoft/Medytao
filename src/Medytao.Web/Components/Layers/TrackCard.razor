@@ -70,10 +70,19 @@
     @if (IsExpanded)
     {
         <div class="track-detail">
-            <div class="detail-row">
-                <span class="detail-label">Fade in</span>
-                <input type="number" min="0" step="100" @bind="_fadeInMs" class="ms-input" /> ms
-            </div>
+            @* Fade in: ukrywamy w Music/Nature przy time-anchored, bo tam
+               crossfade-in jest realizowany przez "Crossfade to next" (zob.
+               triggerCrossfade w audioPreview.js — track.fadeInMs jest tam
+               świadomie pomijany, żeby nie kolidował z ramp-em crossfade-u).
+               Pokazywanie pola, które nic nie robi, byłoby mylące. *@
+            @if (!(_startAtEnabled && (string.Equals(LayerType, "Music", StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(LayerType, "Nature", StringComparison.OrdinalIgnoreCase))))
+            {
+                <div class="detail-row">
+                    <span class="detail-label">Fade in</span>
+                    <input type="number" min="0" step="100" @bind="_fadeInMs" class="ms-input" /> ms
+                </div>
+            }
             <div class="detail-row">
                 <span class="detail-label">Fade out</span>
                 <input type="number" min="0" step="100" @bind="_fadeOutMs" class="ms-input" /> ms
