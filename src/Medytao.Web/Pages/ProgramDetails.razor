@@ -41,15 +41,30 @@
                 var isPlayingCard = isActiveCard && Playback.IsPlaying;
                 var isPausedCard = isActiveCard && Playback.IsPaused;
                 var isLoadingThis = _loadingId == m.Id;
-                @* Total trzymamy z m.DurationMs (prepocomputed po stronie API).
-                   Dla aktywnej karty preferujemy aktualny GetOverallProgress.Total
-                   z silnika, gdy m.DurationMs == 0 (asset bez metadanych
-                   w bazie, ale silnik pobrał durationy lazy w startSession). *@
-                var totalMs = m.DurationMs;
-                if (isActiveCard && totalMs <= 0)
+                @* Liczba tracków na karcie — gdy zero, blokujemy Play (silnik
+                   StartAsync cicho returnuje na pustych warstwach, bez tego
+                   guard'a klik na Play nic by nie robił i suwak by się "nie
+                   aktywował"). *@
+                var hasAnyTracks = m.TracksByLayerType is not null
+                    && m.TracksByLayerType.Any(kv => kv.Value > 0);
+                @* Total dla aktywnej karty czytamy z silnika (Playback.ComputeTotalDurationMs)
+                   bo to jedyne źródło spójne z ElapsedMs/master-clockiem.
+                   m.DurationMs (prepocomputed na backendzie, MeditationSummaryDto)
+                   może mieć inną formułę i powodował: lądowanie suwaka na ~90%
+                   (m.DurationMs mniejszy niż master-clock), albo stagnację na 0%
+                   (m.DurationMs == 0 dla assetów bez metadanych w bazie).
+                   Dla nieaktywnej karty zostaje m.DurationMs jako approximate. *@
+                int totalMs;
+                if (isActiveCard)
                 {
-                    var live = Playback.GetOverallProgress();
-                    totalMs = (int)Math.Round(live.Total);
+                    var liveTotal = Playback.ComputeTotalDurationMs();
+                    totalMs = liveTotal > 0
+                        ? (int)Math.Round(liveTotal)
+                        : m.DurationMs; // ostatni ratunek gdy silnik jeszcze nie wie
+                }
+                else
+                {
+                    totalMs = m.DurationMs;
                 }
                 var displayMs = isActiveCard
                     ? (_seekDragId == m.Id && _seekDragMs.HasValue ? _seekDragMs.Value : Playback.ElapsedMs)
@@ -119,7 +134,8 @@
                     <div class="gold-bar">
                         @foreach (var cat in LayerCategories)
                         {
-                            var count = m.TracksByLayerType.TryGetValue(cat.Key, out var c) ? c : 0;
+                            var count = m.TracksByLayerType is not null
+                                && m.TracksByLayerType.TryGetValue(cat.Key, out var c) ? c : 0;
                             <div class="gold-bar-item" title="@cat.Key">
                                 <i class="@cat.Icon gold-bar-icon" aria-hidden="true"></i>
                                 <span class="gold-bar-count">@count</span>
@@ -135,8 +151,8 @@
                         <div class="player-controls">
                             <button class="player-btn @(isPlayingCard ? "playing" : "")"
                                     @onclick="() => TogglePlay(m)"
-                                    disabled="@isLoadingThis"
-                                    title="@(isPlayingCard ? "Pause" : (isPausedCard ? "Resume" : "Play"))">
+                                    disabled="@(isLoadingThis || !hasAnyTracks)"
+                                    title="@(!hasAnyTracks ? "No tracks in this meditation" : (isPlayingCard ? "Pause" : (isPausedCard ? "Resume" : "Play")))">
                                 @if (isLoadingThis)
                                 {
                                     <span class="spinner"></span>
