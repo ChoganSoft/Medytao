@@ -58,7 +58,7 @@ public static class AuthEndpoints
             // (np. admin@medytao.com) dostawałby Free i musiałby czekać na
             // restart aplikacji żeby SeedUserRolesAsync go promował. Lookup
             // case-insensitive po emailu — appsettings może mieć "Admin@Medytao.com",
-            // baza i tak normalizuje do lowercase.
+            // baza i tak normalizuje do lowercase. null = "brak wpisu" → Free default.
             var seededRole = ResolveSeededRole(emailNormalized, cfg);
 
             var user = new User
@@ -66,7 +66,7 @@ public static class AuthEndpoints
                 Email = emailNormalized,
                 DisplayName = req.DisplayName,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
-                Role = seededRole
+                Role = seededRole ?? UserRole.Free
             };
 
             await users.AddAsync(user);
@@ -92,15 +92,15 @@ public static class AuthEndpoints
             if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
                 return Results.Unauthorized();
 
-            // Lazy upgrade roli z RoleSeed — jeśli config ma email usera z inną
-            // rolą niż w bazie, aktualizujemy przed wystawieniem tokena. Pokrywa
-            // przypadek "user zarejestrował się przed dodaniem do RoleSeed",
-            // bez wymagania restartu aplikacji. Idempotent: różne wartości
-            // wyzwalają update, identyczne — no-op.
+            // Lazy upgrade roli z RoleSeed — JEŚLI config ma email usera, używamy
+            // wartości stamtąd jako "źródła prawdy". null = brak wpisu w configu,
+            // wtedy zostawiamy rolę z bazy (która mogła zostać zmieniona przez
+            // panel /users). Bez tego null-checka login każdego usera spoza
+            // RoleSeed demotował go do Free — kasując efekty promocji UI.
             var seededRole = ResolveSeededRole(user.Email, cfg);
-            if (seededRole != user.Role)
+            if (seededRole.HasValue && seededRole.Value != user.Role)
             {
-                user.Role = seededRole;
+                user.Role = seededRole.Value;
                 user.UpdatedAt = DateTimeOffset.UtcNow;
                 await users.UpdateAsync(user);
                 await uow.SaveChangesAsync();
@@ -111,16 +111,17 @@ public static class AuthEndpoints
     }
 
     // RoleSeed lookup — wartości w appsettings są case-insensitive zarówno
-    // po stronie klucza (email) jak i wartości (nazwa roli). Brak/literówka
-    // → Free (bezpieczne fallback, najmniej uprzywilejowana rola). Do shared
-    // helper, używany w Register i Login.
-    internal static UserRole ResolveSeededRole(string emailNormalized, IConfiguration cfg)
+    // po stronie klucza (email) jak i wartości (nazwa roli). Zwraca:
+    //   - UserRole gdy jest wpis dla emaila i wartość poprawnie sparsowana
+    //   - null gdy brak wpisu (caller decyduje co robić — Register: Free default,
+    //     Login: zostaw rolę z bazy, żeby promocje przez UI nie były kasowane)
+    //   - null gdy literówka roli (z log warning na startupie via SeedUserRolesAsync)
+    // Klucze rozpoczynające się od "_" (np. _comment, _example_*) są pomijane —
+    // umownie traktujemy je jako dokumentację w configu, nie wpisy.
+    internal static UserRole? ResolveSeededRole(string emailNormalized, IConfiguration cfg)
     {
         var section = cfg.GetSection("RoleSeed");
-        if (!section.Exists()) return UserRole.Free;
-        // IConfiguration jest case-insensitive na klucze, ale każdy entry musi
-        // mieć string value — pomijamy klucze rozpoczynające się od "_"
-        // (komentarze/przykłady jak _comment, _example_admin@medytao.com).
+        if (!section.Exists()) return null;
         foreach (var entry in section.GetChildren())
         {
             if (entry.Key.StartsWith('_')) continue;
@@ -128,10 +129,10 @@ public static class AuthEndpoints
             {
                 return Enum.TryParse<UserRole>(entry.Value, ignoreCase: true, out var role)
                     ? role
-                    : UserRole.Free;
+                    : null;
             }
         }
-        return UserRole.Free;
+        return null;
     }
 
     private static AuthTokenDto GenerateToken(User user, IConfiguration cfg)
