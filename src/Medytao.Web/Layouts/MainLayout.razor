@@ -5,7 +5,12 @@
 @inject ThemeService Theme
 @inject Blazored.LocalStorage.ISyncLocalStorageService Storage
 
-<div class="app-shell @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
+<div class="app-shell @(_sidebarCollapsed ? "sidebar-collapsed" : "") @(_mobileDrawerOpen ? "sidebar-mobile-open" : "")">
+    @* Backdrop pod drawerem na mobile — klik gasi drawer. Element renderowany
+       zawsze, widoczność sterowana CSS (opacity + pointer-events) zależnie
+       od klasy sidebar-mobile-open na app-shell. Na desktop media query
+       ukrywa go całkiem przez display:none. *@
+    <div class="sidebar-backdrop" @onclick="CloseMobileDrawer" aria-hidden="true"></div>
     <aside class="sidebar">
         <div class="sidebar-brand">
             <div class="brand-avatar">
@@ -105,7 +110,16 @@
     // Stan zwinięcia sidebara — odczytywany z localStorage w OnInitialized,
     // zapisywany po każdym toggle. Dzięki synchronicznemu storage nie ma
     // miganięcia między pierwszym renderem (rozwinięty) a drugim (zwinięty).
+    // Na desktop steruje width sidebara (240px ↔ 64px). Na mobile media
+    // query całkowicie ignoruje tę klasę — drawer ma osobny flag poniżej.
     private bool _sidebarCollapsed;
+
+    // Stan drawer-a na mobile — niezależny od _sidebarCollapsed. Default false
+    // = drawer ukryty (sidebar zsunięty poza ekran). Toggle hamburger flipuje
+    // oba stany, ale CSS media query decyduje który jest aktywny per viewport.
+    // Nie persistujemy w localStorage — drawer ma być ulotny, zamykany po
+    // każdej nawigacji (HandleLocationChanged).
+    private bool _mobileDrawerOpen;
 
     protected override void OnInitialized()
     {
@@ -136,14 +150,33 @@
     private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
 
     private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
-        => InvokeAsync(StateHasChanged);
+    {
+        // Auto-zamknięcie drawer-a po nawigacji — typowy mobile pattern,
+        // user klika nav-item w drawerze, strona się zmienia, drawer chowa.
+        // Na desktop _mobileDrawerOpen i tak jest ignorowany przez media query,
+        // więc nadpisanie tu nie ma efektu UI.
+        _mobileDrawerOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
 
     private Task ToggleTheme() => Theme.ToggleAsync();
 
+    // Jeden hamburger button obsługuje oba tryby: na desktop zwija sidebar,
+    // na mobile otwiera/zamyka drawer. Toggle obu flagów łącznie — CSS media
+    // query decyduje który jest "widoczny". Persist tylko desktop-flag,
+    // drawer ma być ulotny.
     private void ToggleSidebar()
     {
         _sidebarCollapsed = !_sidebarCollapsed;
+        _mobileDrawerOpen = !_mobileDrawerOpen;
         try { Storage.SetItem(SidebarStorageKey, _sidebarCollapsed); } catch { }
+    }
+
+    // Klik w backdrop zamyka drawer — desktop nie ma backdrop'a, więc
+    // bezpieczne wywołanie (nikt go tam nie kliknie).
+    private void CloseMobileDrawer()
+    {
+        _mobileDrawerOpen = false;
     }
 
     // Breadcrumb w topbarze — pojedyncza etykieta nazwy sekcji (nie pełna ścieżka
@@ -430,5 +463,63 @@
     .app-footer .footer-link:hover {
         color: var(--color-text-secondary);
         text-decoration: underline;
+    }
+
+    /* Backdrop pod drawerem — domyślnie ukryty (desktop go nie używa).
+       Mobile media query niżej pokazuje go gdy drawer otwarty. */
+    .sidebar-backdrop {
+        display: none;
+    }
+
+    /* ── Mobile breakpoint, up to 768px ─────────────────────────────────────
+       Sidebar staje się drawerem off-canvas. Domyślnie zsunięty translateX(-100%)
+       poza viewport. Klasa sidebar-mobile-open przesuwa go do translateX(0).
+       Backdrop pojawia się półprzezroczyście, klik go gasi. */
+    @@media (max-width: 768px) {
+        .sidebar {
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            width: 240px;
+            min-width: 240px;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            z-index: 100;
+        }
+        /* Mobile ignoruje desktop-flag .sidebar-collapsed — drawer ma stałą
+           szerokość 240px gdy otwarty, niezależnie od stanu zwinięcia desktop. */
+        .app-shell.sidebar-collapsed .sidebar {
+            width: 240px;
+            min-width: 240px;
+        }
+        .app-shell.sidebar-mobile-open .sidebar {
+            transform: translateX(0);
+        }
+
+        .sidebar-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 99;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+        .app-shell.sidebar-mobile-open .sidebar-backdrop {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Topbar padding zwarty — na 360px viewport 24px po bokach to za dużo. */
+        .top-bar {
+            padding: 0 12px;
+            gap: 8px;
+        }
+
+        /* Footer też zwarty */
+        .app-footer {
+            padding: 8px 12px;
+            font-size: 11px;
+        }
     }
 </style>

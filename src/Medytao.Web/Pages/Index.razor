@@ -283,8 +283,10 @@
     .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
 
     /* Siatka programów — identyczna do meditation-grid (minmax 500px) dla
-       spójności wizualnej między widokami. */
-    .program-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(500px, 1fr)); gap: 20px; }
+       spójności wizualnej między widokami. min(100%, 500px) zamiast surowego
+       500px sprawia, że na ekranach węższych niż 500px karta zajmuje pełną
+       szerokość kolumny zamiast wystawać poza viewport. */
+    .program-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); gap: 20px; }
     .program-card {
         position: relative;
         background: var(--color-background-primary);
@@ -461,4 +463,21 @@
         border: none; font-size: 14px; font-weight: 500; cursor: pointer;
     }
     .btn-danger:disabled { opacity: 0.6; cursor: default; }
+
+    /* ── Mobile breakpoint, up to 768px ──────────────────────────────────
+       Zwarty page-wrap (16px boczny padding zamiast 40px), header pozwala
+       się zawijać (przycisk "+ New program" pod nazwą sekcji gdy ciasno),
+       modal pełna szerokość ekranu. Karta programu domyślnie zajmuje
+       pełną szerokość przez minmax(min(100%, 500px)) wcześniej. */
+    @@media (max-width: 768px) {
+        .page-wrap { padding: 16px; }
+        .page-header {
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 20px; }
+        .program-card { padding: 18px 18px 60px; }
+        .modal { padding: 20px; max-width: calc(100vw - 24px); }
+    }
 </style>
