@@ -89,6 +89,85 @@ public class DeleteMeditationHandler(IMeditationRepository repo, IUnitOfWork uow
     }
 }
 
+// ── Duplicate ──────────────────────────────────────────────────────────────────
+// Tworzy kopię medytacji ze wszystkimi warstwami i trackami. Assety są
+// referencowane (po AssetId), nie kopiowane — duplikat dzieli pliki audio
+// z oryginałem, edycja tracków w jednej medytacji nie wpływa na drugą.
+//
+// Membership w programach: duplikat trafia do tych samych programów co source.
+// To jest najczęstszy expected behavior — user duplikuje w obrębie programu,
+// w którym pracuje.
+//
+// Status: Draft niezależnie od source — duplikat to świeża praca.
+public record DuplicateMeditationCommand(Guid SourceId, Guid AuthorId) : IRequest<MeditationSummaryDto?>;
+
+public class DuplicateMeditationHandler(IMeditationRepository repo, IUnitOfWork uow)
+    : IRequestHandler<DuplicateMeditationCommand, MeditationSummaryDto?>
+{
+    public async Task<MeditationSummaryDto?> Handle(DuplicateMeditationCommand cmd, CancellationToken ct)
+    {
+        var source = await repo.GetByIdAsync(cmd.SourceId, ct);
+        if (source is null) return null;
+
+        // Authorization — tylko właściciel może duplikować swoją medytację.
+        // (Update/Publish póki co nie sprawdzają — to luka w obecnym kodzie,
+        // ale Duplicate dodajemy świeżo, więc od razu z poprawnym check'iem.)
+        if (source.AuthorId != cmd.AuthorId)
+            throw new UnauthorizedAccessException("Cannot duplicate someone else's meditation.");
+
+        // Create() seeduje cztery puste warstwy (Music/Nature/Text/Fx) z Volume=1.0,
+        // które zaraz nadpisujemy parametrami z source. Tytuł "(Copy)" suffix —
+        // bez deduplikacji "(Copy 2)" itd., user może edytować ręcznie.
+        var copy = Meditation.Create(cmd.AuthorId, $"{source.Title} (Copy)", source.Description, source.CategoryId);
+        copy.DurationMs = source.DurationMs;
+        // Status zostaje Draft (default z konstruktora) — świeża praca.
+
+        // Mapowanie po LayerType: każda warstwa source-a ma swój odpowiednik
+        // w copy (Create seeduje wszystkie cztery typy), więc 1:1.
+        foreach (var srcLayer in source.Layers)
+        {
+            var dstLayer = copy.Layers.FirstOrDefault(l => l.Type == srcLayer.Type);
+            if (dstLayer is null) continue; // safety: gdyby kiedyś enum LayerType się rozszerzył
+
+            dstLayer.Volume = srcLayer.Volume;
+            dstLayer.Muted = srcLayer.Muted;
+
+            foreach (var srcTrack in srcLayer.Tracks.OrderBy(t => t.Order))
+            {
+                dstLayer.Tracks.Add(new Track
+                {
+                    AssetId = srcTrack.AssetId, // referencja do tego samego pliku
+                    Order = srcTrack.Order,
+                    Volume = srcTrack.Volume,
+                    LoopCount = srcTrack.LoopCount,
+                    FadeInMs = srcTrack.FadeInMs,
+                    FadeOutMs = srcTrack.FadeOutMs,
+                    StartOffsetMs = srcTrack.StartOffsetMs,
+                    CrossfadeMs = srcTrack.CrossfadeMs,
+                    PlaybackRate = srcTrack.PlaybackRate,
+                    ReverbMix = srcTrack.ReverbMix,
+                    StartAtMs = srcTrack.StartAtMs,
+                });
+            }
+        }
+
+        // Membership w programach — duplikat trafia do tych samych programów
+        // co source. Programs są załadowane przez GetByIdAsync (Include).
+        foreach (var program in source.Programs)
+        {
+            program.Meditations.Add(copy);
+        }
+
+        await repo.AddAsync(copy, ct);
+        await uow.SaveChangesAsync(ct);
+
+        // Category nie jest świeżo załadowany na copy (Create nie robi Include),
+        // ale source.Category JEST (GetByIdAsync zawiera Include). Przekazujemy
+        // ręcznie nazwę kategorii do DTO — taki sam wzorzec jak w Create handler.
+        return copy.ToSummaryDto(source.Category?.Name);
+    }
+}
+
 // ── Publish ────────────────────────────────────────────────────────────────────
 public record PublishMeditationCommand(Guid Id) : IRequest<MeditationSummaryDto>;
 
