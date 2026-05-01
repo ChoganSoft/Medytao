@@ -296,4 +296,18 @@
 
     .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
     .empty-icon { font-size: 36px; margin-bottom: 12px; }
+
+    /* ── Mobile breakpoint, up to 768px ──────────────────────────────────
+       Asset-grid ma minmax(280px, 1fr), na typowym mobile (360px) jedna
+       kolumna domyślnie się układa, więc ją zostawiamy. Jedyne co ściskamy
+       to padding page-wrap i pozwalamy header się zawijać. */
+    @@media (max-width: 768px) {
+        .page-wrap { padding: 16px; }
+        .page-header {
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 20px; }
+    }
 </style>

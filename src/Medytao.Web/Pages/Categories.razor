@@ -290,4 +290,18 @@
         border: none; font-size: 14px; font-weight: 500; cursor: pointer;
     }
     .btn-danger:disabled { opacity: 0.6; cursor: default; }
+
+    /* ── Mobile breakpoint, up to 768px ──────────────────────────────────
+       Lista kategorii to lekka strona; głównie ścinamy padding page-wrap
+       i pozwalamy header się zawijać na wąskim ekranie. */
+    @@media (max-width: 768px) {
+        .page-wrap { padding: 16px; }
+        .page-header {
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 20px; }
+        .modal { padding: 20px; max-width: calc(100vw - 24px); }
+    }
 </style>

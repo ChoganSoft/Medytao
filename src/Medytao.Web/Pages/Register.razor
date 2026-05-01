@@ -50,8 +50,13 @@
 }
 
 <style>
-    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-background-tertiary); }
-    .login-card { width: 360px; padding: 40px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 12px; }
+    /* Padding 16px na wrap-ie, max-width na card: na mobile karta zajmuje
+       dostępną szerokość minus margines, na desktop trzyma się 360px. */
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-background-tertiary); padding: 16px; }
+    .login-card { width: 100%; max-width: 360px; padding: 40px; background: var(--color-background-primary); border: 1px solid var(--color-border-tertiary); border-radius: 12px; }
+    @@media (max-width: 480px) {
+        .login-card { padding: 24px; }
+    }
     .login-brand { font-size: 16px; font-weight: 500; margin-bottom: 24px; color: var(--color-text-secondary); }
     h1 { font-size: 22px; font-weight: 500; margin: 0 0 24px; }
     .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
