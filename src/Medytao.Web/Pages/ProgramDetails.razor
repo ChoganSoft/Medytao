@@ -877,5 +877,10 @@
         .player-bar { margin: 0 -18px; padding: 10px 18px 12px; }
         .modal { padding: 20px; max-width: calc(100vw - 24px); }
         .card-actions-top { top: 10px; right: 10px; }
+        /* Edytor sesji jest gęstym desktop-experience (4 panele warstw,
+           sliders, drag-and-drop). Na mobile chowamy go z karty — i tak
+           odbieramy go jako "view + play, edycja na desktopie". Duplicate
+           i delete zostają (są one-tap akcjami, bezpieczne na mobile). */
+        .card-actions-top .edit-btn { display: none; }
     }
 </style>

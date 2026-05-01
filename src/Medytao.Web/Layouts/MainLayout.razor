@@ -486,10 +486,32 @@
             z-index: 100;
         }
         /* Mobile ignoruje desktop-flag .sidebar-collapsed — drawer ma stałą
-           szerokość 240px gdy otwarty, niezależnie od stanu zwinięcia desktop. */
+           szerokość 240px gdy otwarty, niezależnie od stanu zwinięcia desktop.
+           Plus zoverride'ujemy WSZYSTKIE efekty klasy .sidebar-collapsed
+           (chowanie nazw, justify-content:center itd.), bo na mobile drawer
+           ma być zawsze w pełnym trybie z nazwami pozycji. Bez tego user,
+           który zostawił desktop sidebar zwinięty, na mobile widziałby
+           drawer 240px szeroki ale z samymi ikonami bez etykiet. */
         .app-shell.sidebar-collapsed .sidebar {
             width: 240px;
             min-width: 240px;
+        }
+        .app-shell.sidebar-collapsed .sidebar-brand {
+            padding: 14px 20px;
+            justify-content: flex-start;
+        }
+        .app-shell.sidebar-collapsed .brand-text,
+        .app-shell.sidebar-collapsed .nav-label,
+        .app-shell.sidebar-collapsed .nav-section-label {
+            display: revert;
+        }
+        .app-shell.sidebar-collapsed .nav-item {
+            justify-content: flex-start;
+            padding: 10px 14px;
+            gap: 10px;
+        }
+        .app-shell.sidebar-collapsed .nav-sub {
+            padding-left: 24px;
         }
         .app-shell.sidebar-mobile-open .sidebar {
             transform: translateX(0);
