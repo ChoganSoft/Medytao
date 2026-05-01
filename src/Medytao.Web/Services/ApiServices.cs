@@ -76,6 +76,15 @@ public class MeditationService(HttpClient http)
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
     }
 
+    // Update meta: tytuł, opis, durationMs. UI obecnie korzysta tylko z tytułu
+    // (click-to-edit w MeditationEditor), pozostałe pola przekazujemy z bieżących
+    // wartości encji, żeby nie nadpisać ich nullami / zerami.
+    public async Task<MeditationSummaryDto?> UpdateAsync(Guid id, string title, string? description, int durationMs)
+    {
+        var response = await http.PutAsJsonAsync($"/api/v1/meditations/{id}", new { title, description, durationMs });
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
+    }
+
     public Task PublishAsync(Guid id) =>
         http.PostAsync($"/api/v1/meditations/{id}/publish", null);
 

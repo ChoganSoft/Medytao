@@ -55,7 +55,10 @@ public class CreateMeditationHandler(
 }
 
 // ── Update ─────────────────────────────────────────────────────────────────────
-public record UpdateMeditationCommand(Guid Id, string Title, string? Description, int DurationMs) : IRequest<MeditationSummaryDto>;
+// AuthorId domknięty w command — bez tego handler nie miał z czego sprawdzić
+// własności i edycja cudzej medytacji była technicznie możliwa (klasyczne
+// IDOR). Endpoint dorzuca user.GetUserId() przy mapowaniu requestu.
+public record UpdateMeditationCommand(Guid Id, Guid AuthorId, string Title, string? Description, int DurationMs) : IRequest<MeditationSummaryDto>;
 
 public class UpdateMeditationHandler(IMeditationRepository repo, IUnitOfWork uow)
     : IRequestHandler<UpdateMeditationCommand, MeditationSummaryDto>
@@ -64,6 +67,9 @@ public class UpdateMeditationHandler(IMeditationRepository repo, IUnitOfWork uow
     {
         var meditation = await repo.GetByIdAsync(cmd.Id, ct)
             ?? throw new KeyNotFoundException($"Meditation {cmd.Id} not found.");
+
+        if (meditation.AuthorId != cmd.AuthorId)
+            throw new UnauthorizedAccessException("Cannot update someone else's meditation.");
 
         meditation.Title = cmd.Title;
         meditation.Description = cmd.Description;
