@@ -9,7 +9,13 @@
             <h1>Categories</h1>
             <p class="subtitle">Types used when creating a session</p>
         </div>
-        <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
+        @* "+ New category" tylko Master+ — backend blokuje POST /categories
+           dla niższych ról (RequireMaster). Free/Apprentice mają predefiniowaną
+           dziesiątkę z auto-seed po rejestracji. *@
+        @if (Auth.IsAtLeast(UserRole.Master))
+        {
+            <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
+        }
     </div>
 
     @if (_loading)
@@ -20,8 +26,15 @@
     {
         <div class="empty-state">
             <div class="empty-icon">☰</div>
-            <p>No categories yet. Add one to tag your sessions.</p>
-            <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
+            @if (Auth.IsAtLeast(UserRole.Master))
+            {
+                <p>No categories yet. Add one to tag your sessions.</p>
+                <button class="btn-primary" @onclick="BeginCreate">+ New category</button>
+            }
+            else
+            {
+                <p>No categories yet.</p>
+            }
         </div>
     }
     else
@@ -36,9 +49,14 @@
                             @(c.MeditationCount == 1 ? "1 session" : $"{c.MeditationCount} sessions")
                         </span>
                     </div>
-                    <button class="delete-btn" @onclick="() => ConfirmDelete(c)" title="Delete">
-                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                    </button>
+                    @* Delete kategorii — Master+. Free/Apprentice widzą listę
+                       (mogą filtrować sesje po kategorii) ale nie modyfikują. *@
+                    @if (Auth.IsAtLeast(UserRole.Master))
+                    {
+                        <button class="delete-btn" @onclick="() => ConfirmDelete(c)" title="Delete">
+                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                        </button>
+                    }
                 </div>
             }
         </div>

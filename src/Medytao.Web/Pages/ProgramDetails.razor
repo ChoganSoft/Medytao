@@ -17,7 +17,13 @@
                 <p class="subtitle">@_program.Description</p>
             }
         </div>
-        <button class="btn-primary" @onclick="CreateNew" disabled="@(_program is null)">+ New session</button>
+        @* "+ New session" tylko dla Master+. Backend blokuje POST /meditations
+           dla niższych ról, frontend chowa przycisk by Free/Apprentice nie
+           widzieli niedostępnej akcji. *@
+        @if (Auth.IsAtLeast(UserRole.Master))
+        {
+            <button class="btn-primary" @onclick="CreateNew" disabled="@(_program is null)">+ New session</button>
+        }
     </div>
 
     @if (_loading)
@@ -28,8 +34,15 @@
     {
         <div class="empty-state">
             <div class="empty-icon">◎</div>
-            <p>No sessions in this program yet.</p>
-            <button class="btn-primary" @onclick="CreateNew">+ New session</button>
+            @if (Auth.IsAtLeast(UserRole.Master))
+            {
+                <p>No sessions in this program yet.</p>
+                <button class="btn-primary" @onclick="CreateNew">+ New session</button>
+            }
+            else
+            {
+                <p>No sessions available yet. Upgrade to Master to create your own.</p>
+            }
         </div>
     }
     else
@@ -82,23 +95,26 @@
                 var sliderFillStr = fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
                 <div class="meditation-card @(isActiveCard ? "playing" : "")">
-                    @* Edit + Duplicate + Delete w prawym górnym rogu — z dolną
-                       częścią karty (player-bar) miejsce w prawym dolnym rogu jest
-                       zajęte przez kontrolki odtwarzacza. Kolejność celowa: edit
-                       (najczęstsze), duplicate (rzadsze), delete (destrukcyjne na
-                       końcu, żeby user nie mylił go z sąsiadem). *@
-                    <div class="card-actions-top">
-                        <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
-                        <button class="duplicate-btn"
-                                @onclick="() => Duplicate(m)"
-                                disabled="@(_duplicatingId == m.Id)"
-                                title="Duplicate">
-                            <i class="fa-solid fa-clone" aria-hidden="true"></i>
-                        </button>
-                        <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">
-                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                        </button>
-                    </div>
+                    @* Edit + Duplicate + Delete tylko dla Master+. Free/Apprentice
+                       mogą jedynie odsłuchiwać sesje (przycisk Play w player-bar
+                       działa dla wszystkich ról). Backend blokuje PUT/DELETE/duplicate
+                       dla niższych ról; frontend chowa cały pasek akcji żeby UI
+                       nie sugerował dostępu. *@
+                    @if (Auth.IsAtLeast(UserRole.Master))
+                    {
+                        <div class="card-actions-top">
+                            <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
+                            <button class="duplicate-btn"
+                                    @onclick="() => Duplicate(m)"
+                                    disabled="@(_duplicatingId == m.Id)"
+                                    title="Duplicate">
+                                <i class="fa-solid fa-clone" aria-hidden="true"></i>
+                            </button>
+                            <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">
+                                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    }
 
                     <div class="card-header">
                         <div class="card-avatar">

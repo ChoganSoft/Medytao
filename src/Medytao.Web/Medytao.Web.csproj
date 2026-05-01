@@ -12,5 +12,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Medytao.Shared\Medytao.Shared.csproj" />
+    <!-- Domain reference dla enuma UserRole (RBAC) — Web używa go w UI
+         conditionals (Auth.IsAtLeast(UserRole.Master)). Pragmatycznie
+         dopuszczalne: importujemy tylko enums (bezstanowe wartości
+         domenowe), żadnych entities. -->
+    <ProjectReference Include="..\Medytao.Domain\Medytao.Domain.csproj" />
   </ItemGroup>
 </Project>

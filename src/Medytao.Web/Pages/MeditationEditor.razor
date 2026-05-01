@@ -242,6 +242,16 @@ else
             return;
         }
 
+        // Route guard RBAC — edytor tworzy/edytuje sesje, więc wymaga Master+.
+        // Free/Apprentice po wpisaniu URL ręcznie albo po kliku w stary link
+        // dostają redirect na "/" (i tak nie mieli skąd kliknąć — UI ProgramDetails
+        // nie pokazuje im edit-btn, ale URL jest publiczny).
+        if (!Auth.IsAtLeast(UserRole.Master))
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
         // Jeżeli wszedłeś z widoku programu, URL ma ?program=<guid> — zapisujemy,
         // żeby Back wrócił do tego samego programu. Brak query = fallback na listę.
         // WASM nie ma QueryHelpers w default assembly reference, więc parsujemy
