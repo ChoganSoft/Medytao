@@ -100,14 +100,27 @@ public class DeleteMeditationHandler(IMeditationRepository repo, IUnitOfWork uow
 // referencowane (po AssetId), nie kopiowane — duplikat dzieli pliki audio
 // z oryginałem, edycja tracków w jednej medytacji nie wpływa na drugą.
 //
-// Membership w programach: duplikat trafia do tych samych programów co source.
-// To jest najczęstszy expected behavior — user duplikuje w obrębie programu,
-// w którym pracuje.
+// Dwa źródła:
+//   - własna sesja (source.AuthorId == cmd.AuthorId) — kopia trafia do tych
+//     samych programów co source (typowy "Duplicate" na karcie ProgramDetails).
+//   - cudza Published z library (Library "Save copy") — kopia trafia do
+//     PIERWSZEGO programu targetUsera (chronologicznie najstarszy, zwykle
+//     auto-seedowany "My sessions"). Programs source-a (cudzy) nie są
+//     dla nas dostępne.
 //
-// Status: Draft niezależnie od source — duplikat to świeża praca.
-public record DuplicateMeditationCommand(Guid SourceId, Guid AuthorId) : IRequest<MeditationSummaryDto?>;
+// CategoryId zachowujemy tylko dla własnej sesji — cudza kategoria należy
+// do innego usera (per-user FK), więc kopia z cudzej sesji ma null.
+//
+// Authorization: właściciel zawsze, cudza tylko gdy public (Published +
+// MinRoleRequired <= UserRole) — te same warunki co GetLibraryAsync.
+//
+// Status: Draft niezależnie od source — kopia to świeża praca.
+public record DuplicateMeditationCommand(Guid SourceId, Guid AuthorId, Domain.Enums.UserRole AuthorRole) : IRequest<MeditationSummaryDto?>;
 
-public class DuplicateMeditationHandler(IMeditationRepository repo, IUnitOfWork uow)
+public class DuplicateMeditationHandler(
+    IMeditationRepository repo,
+    IProgramRepository programRepo,
+    IUnitOfWork uow)
     : IRequestHandler<DuplicateMeditationCommand, MeditationSummaryDto?>
 {
     public async Task<MeditationSummaryDto?> Handle(DuplicateMeditationCommand cmd, CancellationToken ct)
@@ -115,16 +128,18 @@ public class DuplicateMeditationHandler(IMeditationRepository repo, IUnitOfWork 
         var source = await repo.GetByIdAsync(cmd.SourceId, ct);
         if (source is null) return null;
 
-        // Authorization — tylko właściciel może duplikować swoją medytację.
-        // (Update/Publish póki co nie sprawdzają — to luka w obecnym kodzie,
-        // ale Duplicate dodajemy świeżo, więc od razu z poprawnym check'iem.)
-        if (source.AuthorId != cmd.AuthorId)
-            throw new UnauthorizedAccessException("Cannot duplicate someone else's meditation.");
+        var isOwner = source.AuthorId == cmd.AuthorId;
+        var isPubliclyAccessible = source.Status == Domain.Enums.MeditationStatus.Published
+            && source.MinRoleRequired <= cmd.AuthorRole;
+        if (!isOwner && !isPubliclyAccessible)
+            throw new UnauthorizedAccessException("Cannot duplicate this meditation.");
 
         // Create() seeduje cztery puste warstwy (Music/Nature/Text/Fx) z Volume=1.0,
         // które zaraz nadpisujemy parametrami z source. Tytuł "(Copy)" suffix —
         // bez deduplikacji "(Copy 2)" itd., user może edytować ręcznie.
-        var copy = Meditation.Create(cmd.AuthorId, $"{source.Title} (Copy)", source.Description, source.CategoryId);
+        // CategoryId tylko dla własnej (cudza wskazuje na kategorię innego usera).
+        Guid? categoryId = isOwner ? source.CategoryId : null;
+        var copy = Meditation.Create(cmd.AuthorId, $"{source.Title} (Copy)", source.Description, categoryId);
         copy.DurationMs = source.DurationMs;
         // Status zostaje Draft (default z konstruktora) — świeża praca.
 
@@ -157,20 +172,36 @@ public class DuplicateMeditationHandler(IMeditationRepository repo, IUnitOfWork 
             }
         }
 
-        // Membership w programach — duplikat trafia do tych samych programów
-        // co source. Programs są załadowane przez GetByIdAsync (Include).
-        foreach (var program in source.Programs)
+        // Membership w programach — branch po właścicielstwie:
+        if (isOwner)
         {
-            program.Meditations.Add(copy);
+            // Własna sesja — kopia w tych samych programach co source.
+            // Programs source-a załadowane przez GetByIdAsync (Include).
+            foreach (var program in source.Programs)
+            {
+                program.Meditations.Add(copy);
+            }
+        }
+        else
+        {
+            // Cudza sesja z library — kopia ląduje w pierwszym programie
+            // targetUsera (chronologicznie najstarszy, zwykle auto-seed
+            // "My sessions" z rejestracji). Brak programu = błąd domenowy
+            // (user musi mieć przynajmniej jeden, seed gwarantuje to).
+            var ownerPrograms = await programRepo.GetByOwnerAsync(cmd.AuthorId, ct);
+            var firstProgram = ownerPrograms.OrderBy(p => p.CreatedAt).FirstOrDefault()
+                ?? throw new InvalidOperationException("Target user has no program to save the copy into.");
+            firstProgram.Meditations.Add(copy);
         }
 
         await repo.AddAsync(copy, ct);
         await uow.SaveChangesAsync(ct);
 
         // Category nie jest świeżo załadowany na copy (Create nie robi Include),
-        // ale source.Category JEST (GetByIdAsync zawiera Include). Przekazujemy
-        // ręcznie nazwę kategorii do DTO — taki sam wzorzec jak w Create handler.
-        return copy.ToSummaryDto(source.Category?.Name);
+        // ale source.Category JEST (GetByIdAsync zawiera Include). Dla własnej
+        // sesji przekazujemy nazwę z source; dla cudzej category jest null
+        // (ustawione wyżej), więc DTO też dostanie null.
+        return copy.ToSummaryDto(isOwner ? source.Category?.Name : null);
     }
 }
 

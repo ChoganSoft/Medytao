@@ -64,9 +64,30 @@
                 var sliderFillStr = fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
                 <div class="meditation-card @(isActiveCard ? "playing" : "")">
-                    @* Brak card-actions-top — biblioteka pokazuje cudze sesje,
-                       user nie może ich edytować/duplikować/usuwać.
-                       (Faza 3: dorobimy "Save copy" dla Master+ używając duplicate.) *@
+                    @* Save copy — Master+ kopiuje cudzą sesję do swojego pierwszego
+                       programu (zwykle auto-seedowany "My sessions"). Po sukcesie
+                       ikona przełącza się na ✓ przez 2 sekundy żeby user zobaczył
+                       że akcja przeszła; po tym wraca do fa-clone. Brak nawigacji —
+                       user zostaje na library, kopia czeka pod /. *@
+                    @if (Auth.IsAtLeast(UserRole.Master))
+                    {
+                        var savedRecently = _savedIds.Contains(m.Id);
+                        <div class="card-actions-top">
+                            <button class="duplicate-btn"
+                                    @onclick="() => SaveCopy(m)"
+                                    disabled="@(_savingCopyId == m.Id || savedRecently)"
+                                    title="@(savedRecently ? "Saved to your library" : "Save a copy")">
+                                @if (savedRecently)
+                                {
+                                    <i class="fa-solid fa-check" aria-hidden="true"></i>
+                                }
+                                else
+                                {
+                                    <i class="fa-solid fa-clone" aria-hidden="true"></i>
+                                }
+                            </button>
+                        </div>
+                    }
 
                     <div class="card-header">
                         <div class="card-avatar">
@@ -166,6 +187,11 @@
     // Pojedynczy slot, bo naraz scrub-uje się tylko jedną kartę.
     private Guid? _seekDragId;
     private double? _seekDragMs;
+    // Save copy state: _savingCopyId disabled-uje przycisk podczas HTTP w locie,
+    // _savedIds (HashSet) trzyma id-ki sesji niedawno skopiowanych żeby pokazać
+    // chwilowy ✓ na ikonie (przez 2s, potem usunięcie + StateHasChanged).
+    private Guid? _savingCopyId;
+    private readonly HashSet<Guid> _savedIds = new();
 
     // Kolejność i ikony warstw zgodne z innymi widokami (Index, ProgramDetails,
     // MeditationEditor) — Text → Music → Nature → Fx.
@@ -247,6 +273,38 @@
     }
 
     private Task StopPlay() => Playback.StopAsync();
+
+    // Kopia sesji z library do pierwszego programu targetUsera. Backend
+    // (DuplicateMeditationCommand) sprawdza czy user ma dostęp do source
+    // (Published + role check), więc tu nie powtarzamy auth.
+    // UX: po sukcesie dorzucamy id do _savedIds → ikona pokazuje ✓ przez 2s,
+    // potem usuwamy i wymuszamy re-render. Bez nawigacji — user zostaje
+    // w library, jego kopia czeka w /programs przy następnej wizycie.
+    private async Task SaveCopy(MeditationSummaryDto m)
+    {
+        if (_savingCopyId is not null) return;
+        _savingCopyId = m.Id;
+        try
+        {
+            var copy = await MeditationSvc.DuplicateAsync(m.Id);
+            if (copy is not null)
+            {
+                _savedIds.Add(m.Id);
+                StateHasChanged();
+                // Po 2s odśwież ikonę z powrotem do fa-clone. Detached delay,
+                // bez await żeby nie blokować klikalnego UI.
+                _ = Task.Delay(2000).ContinueWith(_ =>
+                {
+                    _savedIds.Remove(m.Id);
+                    InvokeAsync(StateHasChanged);
+                });
+            }
+        }
+        finally
+        {
+            _savingCopyId = null;
+        }
+    }
 
     private void OnSeekDrag(Guid meditationId, double ms)
     {
@@ -432,6 +490,32 @@
         opacity: 0.5;
         cursor: not-allowed;
     }
+
+    /* Save copy w prawym górnym rogu karty — pojedynczy przycisk fa-clone
+       (po sukcesie chwilowo fa-check). Ten sam wzór wymiarów co
+       ProgramDetails .duplicate-btn dla wizualnej spójności. */
+    .card-actions-top {
+        position: absolute;
+        top: 14px; right: 20px;
+        display: flex; align-items: center; gap: 4px;
+        z-index: 1;
+    }
+    .duplicate-btn {
+        width: 36px; height: 36px;
+        border: none; background: transparent;
+        color: var(--color-text-secondary);
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 14px; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        transition: background 0.15s, color 0.15s;
+    }
+    .duplicate-btn:hover:not(:disabled) {
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+    }
+    .duplicate-btn:disabled { cursor: default; opacity: 0.6; }
 
     .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
     .empty-icon { font-size: 36px; margin-bottom: 12px; }
