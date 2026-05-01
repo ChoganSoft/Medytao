@@ -14,10 +14,12 @@ public static class AuthEndpoints
     // Nazwa domyślnego programu tworzonego przy rejestracji i przy seed'zie
     // migracji (dla userów zarejestrowanych przed feature'em programów).
     // Trzymane jako const, żeby seed i auth używały tego samego stringa.
-    // Nazwa wyświetlana userowi — angielski label (UI-facing), spójny ze
-    // zmianą "meditation → session" w UI. Backend (klasa Meditation,
-    // route /meditations/...) zostają niezmienione (osobny temat).
-    public const string DefaultProgramName = "My sessions";
+    // Nazwa wyświetlana userowi — angielski label (UI-facing). Zaktualizowana
+    // do "Default program" — neutralna nazwa folderu który user może później
+    // sam przemianować przez edit-btn na karcie programu. Stare nazwy
+    // ("My meditations", "My sessions") są migrowane przez RenameDefaultProgramsAsync
+    // przy starcie (idempotentnie).
+    public const string DefaultProgramName = "Default program";
 
     // Predefiniowane kategorie sesji medytacyjnych — wspólna lista dla
     // rejestracji i seeda migracyjnego (Program.cs → SeedDefaultCategoriesAsync).

@@ -132,6 +132,15 @@ if (app.Environment.IsDevelopment())
     // w mapping pozostają z bieżącą rolą (default Free dla świeżo zarejestrowanych).
     await SeedUserRolesAsync(db, app.Configuration);
 
+    // Migracja nazwy domyślnego programu dla seedowanych userów. Po dwóch
+    // rebrandingach ("My meditations" → "My sessions" → "Default program")
+    // nowa instalacja widzi spójną nazwę. Idempotentne, działa tylko gdy
+    // program ma DOKŁADNIE starą nazwę — user który własnoręcznie nazwał
+    // swój program "My sessions" zachowa tę nazwę (chyba że jest seedowany
+    // od wcześniejszej rejestracji, co jest oczywiście problemem etycznym
+    // bezpiecznym dla MVP — w produkcji dorobimy migration tracking).
+    await RenameDefaultProgramsAsync(db);
+
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
@@ -197,6 +206,25 @@ static async Task EnsureUserRoleColumnAsync(AppDbContext db)
         END
     """;
     await db.Database.ExecuteSqlRawAsync(sql);
+}
+
+// Idempotentny rename starych nazw seedowanego programu na bieżącą wartość
+// AuthEndpoints.DefaultProgramName. Dotyczy tylko programów z DOKŁADNIE
+// starymi nazwami ("My meditations" / "My sessions") — userzy którzy
+// nazwali swój program własną wartością nie są ruszani. SQL parametryzowany
+// przez interpolated string raw, ale wartości są constants z naszego kodu
+// (nie user input), więc bezpieczne.
+static async Task RenameDefaultProgramsAsync(AppDbContext db)
+{
+    var newName = AuthEndpoints.DefaultProgramName;
+    string[] oldNames = ["My meditations", "My sessions"];
+    foreach (var oldName in oldNames)
+    {
+        if (oldName == newName) continue; // sam ze sobą — no-op
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE Programs SET Name = {0} WHERE Name = {1}",
+            newName, oldName);
+    }
 }
 
 // Idempotentne dodanie kolumny MinRoleRequired do tabeli Meditations.
