@@ -13,6 +13,12 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
             .Include(m => m.Layers)
                 .ThenInclude(l => l.Tracks)
                     .ThenInclude(t => t.Asset)
+            // Programs (M:N) są ładowane przede wszystkim dla DuplicateMeditationCommand —
+            // duplikat trafia do tych samych programów co source. Dla pozostałych
+            // commands (Update/Publish/Delete) i queries to mały dodatkowy join,
+            // typowo 1-2 programy per medytacja, więc trzymamy się jednej metody
+            // GetByIdAsync zamiast mnożyć overload-y.
+            .Include(m => m.Programs)
             .FirstOrDefaultAsync(m => m.Id == id, ct);
 
     public async Task<IEnumerable<Meditation>> GetByAuthorAsync(Guid authorId, CancellationToken ct = default) =>

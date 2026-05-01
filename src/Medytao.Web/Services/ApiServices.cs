@@ -79,6 +79,14 @@ public class MeditationService(HttpClient http)
     public Task PublishAsync(Guid id) =>
         http.PostAsync($"/api/v1/meditations/{id}/publish", null);
 
+    // Duplikat trafia do tych samych programów co source (po stronie backendu).
+    // Zwraca DTO nowej medytacji albo null gdy source nie istnieje / brak uprawnień.
+    public async Task<MeditationSummaryDto?> DuplicateAsync(Guid id)
+    {
+        var response = await http.PostAsync($"/api/v1/meditations/{id}/duplicate", null);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
+    }
+
     public Task<HttpResponseMessage> DeleteAsync(Guid id) =>
         http.DeleteAsync($"/api/v1/meditations/{id}");
 

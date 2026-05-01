@@ -42,6 +42,15 @@ public static class MeditationEndpoints
             return Results.Ok(result);
         });
 
+        // Duplicate — zwraca DTO nowej medytacji, frontend odświeża listę po wywołaniu.
+        // 404 gdy source nie istnieje, 401 gdy źródło należy do innego usera (handler
+        // rzuca UnauthorizedAccessException → middleware zamapuje na 401).
+        group.MapPost("/{id:guid}/duplicate", async (Guid id, ClaimsPrincipal user, IMediator mediator) =>
+        {
+            var result = await mediator.Send(new DuplicateMeditationCommand(id, user.GetUserId()));
+            return result is null ? Results.NotFound() : Results.Created($"/api/v1/meditations/{result.Id}", result);
+        });
+
         group.MapDelete("/{id:guid}", async (Guid id, IMediator mediator) =>
         {
             await mediator.Send(new DeleteMeditationCommand(id));

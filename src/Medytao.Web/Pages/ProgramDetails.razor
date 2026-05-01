@@ -82,11 +82,19 @@
                 var sliderFillStr = fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
                 <div class="meditation-card @(isActiveCard ? "playing" : "")">
-                    @* Edit + Delete w prawym górnym rogu — z nową dolną częścią
-                       karty (player-bar) miejsce w prawym dolnym rogu jest zajęte
-                       przez kontrolki odtwarzacza. *@
+                    @* Edit + Duplicate + Delete w prawym górnym rogu — z dolną
+                       częścią karty (player-bar) miejsce w prawym dolnym rogu jest
+                       zajęte przez kontrolki odtwarzacza. Kolejność celowa: edit
+                       (najczęstsze), duplicate (rzadsze), delete (destrukcyjne na
+                       końcu, żeby user nie mylił go z sąsiadem). *@
                     <div class="card-actions-top">
                         <button class="edit-btn" @onclick="() => Open(m.Id)" title="Edit">✎</button>
+                        <button class="duplicate-btn"
+                                @onclick="() => Duplicate(m)"
+                                disabled="@(_duplicatingId == m.Id)"
+                                title="Duplicate">
+                            <i class="fa-solid fa-clone" aria-hidden="true"></i>
+                        </button>
                         <button class="delete-btn" @onclick="() => ConfirmDelete(m)" title="Delete">
                             <i class="fa-solid fa-trash" aria-hidden="true"></i>
                         </button>
@@ -277,6 +285,10 @@
     private Guid? _loadingId;
     private MeditationSummaryDto? _deletingMeditation;
     private bool _deleting;
+    // Id sesji, która właśnie się duplikuje — żeby disabled-ować przycisk
+    // i uniknąć podwójnych kliknięć (HTTP w locie). Pojedynczy slot, bo
+    // rzadko zdarzy się zlecanie kilku duplikacji równolegle.
+    private Guid? _duplicatingId;
     // Drag-only preview pozycji na pasku postępu — żeby suwak płynnie nadążał
     // za myszą bez restartowania sesji co piksel. Faktyczny SeekAsync leci
     // dopiero w @onchange (release). _seekDragId trzyma id karty, na której
@@ -444,6 +456,28 @@
     private void Open(Guid id) => Nav.NavigateTo($"/meditations/{id}?program={Id}");
 
     private void GoBack() => Nav.NavigateTo("/");
+
+    // Duplicate — backend kopiuje sesję z warstwami i trackami, dorzuca do tych
+    // samych programów co source. Po sukcesie tylko refresh listy w tym programie;
+    // nie nawigujemy do edytora (najczęściej user duplikuje "na zapas" i sam
+    // klika ✎ jeśli chce edytować).
+    private async Task Duplicate(MeditationSummaryDto m)
+    {
+        if (_duplicatingId is not null) return;
+        _duplicatingId = m.Id;
+        try
+        {
+            var copy = await MeditationSvc.DuplicateAsync(m.Id);
+            if (copy is not null)
+            {
+                await LoadAsync();
+            }
+        }
+        finally
+        {
+            _duplicatingId = null;
+        }
+    }
 
     private void ConfirmDelete(MeditationSummaryDto m) => _deletingMeditation = m;
 
@@ -721,7 +755,7 @@
         cursor: not-allowed;
     }
 
-    .edit-btn, .delete-btn {
+    .edit-btn, .duplicate-btn, .delete-btn {
         width: 36px; height: 36px;
         border: none; background: transparent;
         color: var(--color-text-secondary);
@@ -732,17 +766,18 @@
         padding: 0;
         transition: background 0.15s, color 0.15s;
     }
-    .edit-btn:hover {
+    .edit-btn:hover, .duplicate-btn:hover:not(:disabled) {
         background: var(--color-background-secondary);
         color: var(--color-text-primary);
     }
-    /* Kosz fa-trash ma większą wagę wizualną niż unicode pencil w edit-btn,
-       więc trzymamy delete na 14px żeby ikony optycznie były równe. */
-    .delete-btn { font-size: 14px; }
+    /* Kosz fa-trash i kopia fa-clone mają większą wagę wizualną niż unicode
+       pencil w edit-btn, więc trzymamy je na 14px żeby ikony optycznie były równe. */
+    .delete-btn, .duplicate-btn { font-size: 14px; }
     .delete-btn:hover {
         background: var(--color-background-danger, rgba(220, 53, 69, 0.12));
         color: var(--color-text-danger, #dc3545);
     }
+    .duplicate-btn:disabled { cursor: default; opacity: 0.4; }
 
     .spinner {
         width: 14px; height: 14px;
