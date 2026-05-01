@@ -95,6 +95,17 @@
             </button>
             <span class="top-bar-breadcrumb">@CurrentSectionName()</span>
             <div class="top-bar-spacer"></div>
+            @* Powitanie zalogowanego usera w formacie "Hello, Role Name".
+               Renderowane tylko gdy mamy DisplayName (czyli token ważny i
+               zinicjalizowany). Pole CurrentRole ma wartość Free dla
+               niezalogowanych, ale DisplayName=null jest jednoznacznym sygnałem.
+               Brak banera na stronach Login/Register (i tak nie ma tokena). *@
+            @if (!string.IsNullOrEmpty(Auth.CurrentDisplayName))
+            {
+                <span class="hello-banner">
+                    Hello, <span class="hello-role">@Auth.CurrentRole</span> @Auth.CurrentDisplayName
+                </span>
+            }
             <button class="theme-toggle" @onclick="ToggleTheme"
                     title="@(Theme.IsDark ? "Switch to light theme" : "Switch to dark theme")">
                 @(Theme.IsDark ? "☀" : "☾")
@@ -163,9 +174,25 @@
         // sekcję wywiedzioną z URL-a, więc po przejściu /programs → /categories
         // etykieta musi się odświeżyć.
         Nav.LocationChanged += HandleLocationChanged;
+
+        // Re-render banner-a "Hello, ..." po login/logout/register. Bez tego
+        // po zalogowaniu user nie zobaczyłby swojego imienia aż do następnej
+        // nawigacji (gdy LocationChanged i tak by wymusił re-render).
+        Auth.OnChanged += HandleAuthChanged;
+    }
+
+    // Po pierwszym renderze (np. F5 na /programs) MainLayout musi załadować
+    // token z localStorage żeby banner "Hello, ..." pokazał się od razu.
+    // Strony i tak robią Auth.InitializeAsync() w swoim OnInitializedAsync,
+    // ale dla MainLayout (który mount-uje się PRZED page) potrzebujemy też
+    // tutaj. Jeśli już zainicjalizowany — Auth.InitializeAsync zwraca natychmiast.
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
     }
 
     private void HandleThemeChanged() => InvokeAsync(StateHasChanged);
+    private void HandleAuthChanged() => InvokeAsync(StateHasChanged);
 
     private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
@@ -237,6 +264,7 @@
     {
         Theme.OnChanged -= HandleThemeChanged;
         Nav.LocationChanged -= HandleLocationChanged;
+        Auth.OnChanged -= HandleAuthChanged;
     }
 }
 
@@ -430,6 +458,29 @@
         font-weight: 400;
     }
     .top-bar-spacer { flex: 1; }
+
+    /* Powitanie zalogowanego usera — dyskretne, font 13px, lekka separacja
+       od theme-toggle przez gap rodzica. Rola wyróżniona kolorem akcentu
+       (gold), żeby user widział na co Admin go promował. */
+    .hello-banner {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+        white-space: nowrap;
+    }
+    .hello-role {
+        color: var(--color-text-info);
+        font-weight: 500;
+    }
+    /* Mobile — na 360px viewport long banner ("Hello, Apprentice Catherine
+       Smith") rozsadziłby topbar. Skracamy fontem, ucinamy text-overflow. */
+    @@media (max-width: 768px) {
+        .hello-banner {
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 50vw;
+        }
+    }
 
     /* Theme toggle przeniesiony z sidebara do topbara — naturalne miejsce na
        globalne akcje UI, poza tym paleta "ciemny sidebar" kolidowała wizualnie
