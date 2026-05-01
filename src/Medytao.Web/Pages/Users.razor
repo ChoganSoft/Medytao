@@ -15,6 +15,16 @@
         </div>
     </div>
 
+    @* Ostrzeżenie o re-login. JWT pieczętuje rolę w momencie logowania —
+       promocja przez ten panel zapisuje się w DB natychmiast, ale token
+       targetUsera (jeśli jest aktualnie zalogowany) ma starą wartość aż do
+       wygaśnięcia (24h) lub re-login. Backend filtruje library/endpoints po
+       claim z tokena, więc user widzi nową rolę dopiero po wylogowaniu. *@
+    <div class="info-banner">
+        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        <span>Role changes take effect after the user signs out and back in.</span>
+    </div>
+
     @if (_loading)
     {
         <div class="empty-state">Loading…</div>
@@ -260,6 +270,17 @@
         padding: 12px;
         font-size: 14px;
     }
+    .info-banner {
+        display: flex; align-items: center; gap: 10px;
+        background: var(--color-background-info);
+        color: var(--color-text-info);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 13px;
+        line-height: 1.4;
+        margin-bottom: 20px;
+    }
+    .info-banner i { font-size: 14px; }
     .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
 
     @@media (max-width: 768px) {
