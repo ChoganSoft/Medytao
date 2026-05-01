@@ -107,6 +107,12 @@ public class MeditationService(HttpClient http)
     public Task<List<MeditationSummaryDto>?> GetAllAsync() =>
         http.GetFromJsonAsync<List<MeditationSummaryDto>>("/api/v1/meditations");
 
+    // Library — sesje opublikowane przez innych userów, filtr po MinRoleRequired
+    // (backend dobiera widoczne dla aktualnej roli z JWT). Dla Free/Apprentice
+    // to jedyne źródło sesji do odsłuchu (nie tworzą własnych).
+    public Task<List<MeditationSummaryDto>?> GetLibraryAsync() =>
+        http.GetFromJsonAsync<List<MeditationSummaryDto>>("/api/v1/meditations/library");
+
     public Task<MeditationDetailDto?> GetByIdAsync(Guid id) =>
         http.GetFromJsonAsync<MeditationDetailDto>($"/api/v1/meditations/{id}");
 

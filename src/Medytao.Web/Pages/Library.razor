@@ -1,0 +1,464 @@
+@page "/library"
+@implements IDisposable
+@inject MeditationService MeditationSvc
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject PlaybackSessionService Playback
+
+@* Strona biblioteki — gotowe sesje opublikowane przez innych użytkowników,
+   filtrowane po MinRoleRequired. Free i Apprentice mają tu jedyne źródło
+   sesji do odsłuchu (nie tworzą własnych). Master i Guru widzą tu cudze
+   sesje (swoje są w /programs/{id}). Karta sesji w bibliotece pozwala
+   tylko na odsłuch (Play/Pause/Stop, scrubowalny progress) — bez akcji
+   autora (edit/duplicate/delete), bo to nie są sesje bieżącego usera. *@
+
+<div class="page-wrap">
+    <div class="page-header">
+        <div>
+            <h1>Library</h1>
+            <p class="subtitle">Sessions shared by other authors</p>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="empty-state">Loading…</div>
+    }
+    else if (!_meditations.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">◎</div>
+            <p>No sessions in the library yet.</p>
+        </div>
+    }
+    else
+    {
+        <div class="meditation-grid">
+            @foreach (var m in _meditations)
+            {
+                var isActiveCard = Playback.CurrentMeditationId == m.Id;
+                var isPlayingCard = isActiveCard && Playback.IsPlaying;
+                var isPausedCard = isActiveCard && Playback.IsPaused;
+                var isLoadingThis = _loadingId == m.Id;
+                var hasAnyTracks = m.TracksByLayerType is not null
+                    && m.TracksByLayerType.Any(kv => kv.Value > 0);
+                int totalMs;
+                if (isActiveCard)
+                {
+                    var liveTotal = Playback.ComputeTotalDurationMs();
+                    totalMs = liveTotal > 0
+                        ? (int)Math.Round(liveTotal)
+                        : m.DurationMs;
+                }
+                else
+                {
+                    totalMs = m.DurationMs;
+                }
+                var displayMs = isActiveCard
+                    ? (_seekDragId == m.Id && _seekDragMs.HasValue ? _seekDragMs.Value : Playback.ElapsedMs)
+                    : 0d;
+                var fillPct = totalMs > 0 ? Math.Clamp(displayMs / totalMs, 0, 1) * 100 : 0;
+                var sliderMax = totalMs > 0 ? totalMs : 1;
+                var sliderMaxStr = sliderMax.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var sliderValStr = displayMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+                var sliderFillStr = fillPct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+                <div class="meditation-card @(isActiveCard ? "playing" : "")">
+                    @* Brak card-actions-top — biblioteka pokazuje cudze sesje,
+                       user nie może ich edytować/duplikować/usuwać.
+                       (Faza 3: dorobimy "Save copy" dla Master+ używając duplicate.) *@
+
+                    <div class="card-header">
+                        <div class="card-avatar">
+                            <img src="img/meditation-avatar.png" alt="" />
+                            @* Status badge nie ma sensu na library — wszystkie
+                               sesje są Published, więc plakietka byłaby zawsze
+                               taka sama. Pomijamy. *@
+                        </div>
+                        <div class="card-meta-rows">
+                            <div class="meta-row">
+                                <span class="meta-label">TITLE</span>
+                                <span class="meta-value meta-title">@m.Title</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">TYPE</span>
+                                @if (!string.IsNullOrEmpty(m.CategoryName))
+                                {
+                                    <span class="meta-value category-chip">@m.CategoryName</span>
+                                }
+                                else
+                                {
+                                    <span class="meta-value category-chip empty">Uncategorized</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(m.Description))
+                            {
+                                <div class="card-desc">@m.Description</div>
+                            }
+                            <div class="card-desc-meta">@FormatDuration(m.DurationMs) · @m.CreatedAt.ToString("MMM d, yyyy")</div>
+                        </div>
+                    </div>
+
+                    <div class="gold-bar">
+                        @foreach (var cat in LayerCategories)
+                        {
+                            var count = m.TracksByLayerType is not null
+                                && m.TracksByLayerType.TryGetValue(cat.Key, out var c) ? c : 0;
+                            <div class="gold-bar-item" title="@cat.Key">
+                                <i class="@cat.Icon gold-bar-icon" aria-hidden="true"></i>
+                                <span class="gold-bar-count">@count</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="player-bar">
+                        <div class="player-controls">
+                            <button class="player-btn @(isPlayingCard ? "playing" : "")"
+                                    @onclick="() => TogglePlay(m)"
+                                    disabled="@(isLoadingThis || !hasAnyTracks)"
+                                    title="@(!hasAnyTracks ? "No tracks in this session" : (isPlayingCard ? "Pause" : (isPausedCard ? "Resume" : "Play")))">
+                                @if (isLoadingThis)
+                                {
+                                    <span class="spinner"></span>
+                                }
+                                else if (isPlayingCard)
+                                {
+                                    <span class="player-glyph">⏸</span>
+                                }
+                                else
+                                {
+                                    <span class="player-glyph">▶</span>
+                                }
+                            </button>
+                            <button class="player-stop-btn"
+                                    @onclick="StopPlay"
+                                    disabled="@(!isActiveCard)"
+                                    title="Stop">
+                                <span class="player-glyph">◼</span>
+                            </button>
+                        </div>
+                        <div class="player-progress">
+                            <span class="player-time">@FormatMs(displayMs)</span>
+                            <input type="range" min="0"
+                                   max="@sliderMaxStr"
+                                   step="100"
+                                   @key="(m.Id, sliderMax / 1000)"
+                                   value="@sliderValStr"
+                                   @oninput="e => OnSeekDrag(m.Id, double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                                   @onchange="e => OnSeekRelease(m, double.Parse(e.Value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture))"
+                                   class="medytao-slider player-slider"
+                                   style="--slider-fill: @sliderFillStr%"
+                                   disabled="@(!isActiveCard || totalMs <= 0)" />
+                            <span class="player-time">@FormatMs(totalMs)</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<MeditationSummaryDto> _meditations = [];
+    private bool _loading = true;
+    private Guid? _loadingId;
+    // Drag-only preview pozycji na pasku postępu — analogicznie do ProgramDetails.
+    // Pojedynczy slot, bo naraz scrub-uje się tylko jedną kartę.
+    private Guid? _seekDragId;
+    private double? _seekDragMs;
+
+    // Kolejność i ikony warstw zgodne z innymi widokami (Index, ProgramDetails,
+    // MeditationEditor) — Text → Music → Nature → Fx.
+    private static readonly (string Key, string Icon)[] LayerCategories =
+    {
+        ("Text", "fa-solid fa-comment"),
+        ("Music", "fa-solid fa-music"),
+        ("Nature", "fa-solid fa-wind"),
+        ("Fx", "fa-solid fa-drum"),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!await Auth.IsAuthenticatedAsync())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        await LoadAsync();
+        Playback.OnChanged += HandlePlaybackChanged;
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _meditations = await MeditationSvc.GetLibraryAsync() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            await Auth.LogoutAsync();
+            Nav.NavigateTo("/login");
+            return;
+        }
+        _loading = false;
+    }
+
+    private void HandlePlaybackChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Playback.OnChanged -= HandlePlaybackChanged;
+    }
+
+    // Trzy stany toggle'a — taki sam wzorzec co w ProgramDetails.
+    private async Task TogglePlay(MeditationSummaryDto m)
+    {
+        if (Playback.CurrentMeditationId == m.Id)
+        {
+            if (Playback.IsPlaying)
+            {
+                await Playback.PauseAsync();
+                return;
+            }
+            if (Playback.IsPaused)
+            {
+                await Playback.ResumeAsync();
+                return;
+            }
+        }
+        if (_loadingId is not null) return;
+        _loadingId = m.Id;
+        try
+        {
+            // GetByIdAsync z visibility check po stronie backendu — Free user
+            // który zgaduje URL cudzej Draft dostaje 404. Tu wszystkie z biblioteki
+            // są dla niego widoczne (lista przeszła przez ten sam filtr).
+            var detail = await MeditationSvc.GetByIdAsync(m.Id);
+            if (detail is null) return;
+            await Playback.StartAsync(detail);
+        }
+        catch { }
+        finally
+        {
+            _loadingId = null;
+        }
+    }
+
+    private Task StopPlay() => Playback.StopAsync();
+
+    private void OnSeekDrag(Guid meditationId, double ms)
+    {
+        _seekDragId = meditationId;
+        _seekDragMs = ms;
+    }
+
+    private async Task OnSeekRelease(MeditationSummaryDto m, double ms)
+    {
+        _seekDragId = null;
+        _seekDragMs = null;
+        if (Playback.CurrentMeditationId != m.Id) return;
+        await Playback.SeekAsync(ms);
+    }
+
+    private static string FormatMs(double ms)
+    {
+        if (double.IsNaN(ms) || ms < 0) ms = 0;
+        var totalSec = (int)(ms / 1000);
+        var m = totalSec / 60;
+        var s = totalSec % 60;
+        return $"{m}:{s:00}";
+    }
+
+    private static string FormatDuration(int ms) =>
+        ms == 0 ? "No duration set" : $"{ms / 60000}m {(ms % 60000) / 1000}s";
+}
+
+<style>
+    /* Style identyczne do ProgramDetails — kopia, ponieważ karta library
+       wygląda jak karta sesji (avatar + meta + gold-bar + player-bar).
+       Bez sekcji modale (no Create/Delete) i bez card-actions-top.
+       Refactor "wyciągnij MeditationCard do shared component" jest kandydatem
+       na osobną iterację porządkującą. */
+
+    .page-wrap { padding: 32px 40px; max-width: 1200px; margin: 0 auto; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; gap: 16px; }
+    h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+    .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+
+    .meditation-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); gap: 20px; }
+    .meditation-card {
+        position: relative;
+        background: var(--color-background-primary);
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 10px;
+        padding: 24px 28px 0;
+        overflow: hidden;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .meditation-card:hover { border-color: var(--color-border-secondary); }
+    .meditation-card.playing { border-color: var(--color-text-info); }
+
+    .card-header { display: flex; gap: 22px; align-items: flex-start; margin-bottom: 20px; }
+    .card-avatar { width: 104px; height: 104px; flex-shrink: 0; position: relative; }
+    .card-avatar img { width: 100%; height: 100%; display: block; }
+
+    .card-meta-rows { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+    .meta-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .meta-label {
+        font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+        color: var(--color-text-tertiary);
+        flex-shrink: 0;
+        min-width: 48px;
+    }
+    .meta-value {
+        font-size: 14px; color: var(--color-text-primary);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .meta-title { font-weight: 500; font-size: 15px; }
+
+    .category-chip {
+        display: inline-flex; align-items: center;
+        padding: 2px 10px;
+        border-radius: 20px;
+        background: rgba(197, 165, 108, 0.15);
+        color: #8B6F3E;
+        font-size: 12px; font-weight: 500;
+        max-width: 100%;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .category-chip.empty {
+        background: var(--color-background-secondary);
+        color: var(--color-text-tertiary);
+        font-style: italic;
+        font-weight: 400;
+    }
+
+    .card-desc {
+        font-size: 13px; color: var(--color-text-secondary);
+        margin: 8px 0 0; line-height: 1.5;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .card-desc-meta {
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+        margin-top: 8px;
+    }
+
+    .gold-bar {
+        display: flex; justify-content: space-around; align-items: center;
+        background: #C5A56C;
+        padding: 12px 28px;
+        margin: 0 -28px;
+    }
+    .gold-bar-item {
+        display: inline-flex; align-items: center; gap: 10px;
+        color: #FFFFFF;
+        font-size: 17px;
+        font-weight: 500;
+    }
+    .gold-bar-icon { font-size: 20px; line-height: 1; }
+    .gold-bar-count {
+        font-variant-numeric: tabular-nums;
+        min-width: 14px; text-align: center;
+    }
+
+    .player-bar {
+        background: var(--color-background-primary);
+        margin: 0 -28px;
+        padding: 10px 28px 12px;
+        border-top: 1px solid var(--color-border-tertiary);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .player-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+    }
+    .player-btn, .player-stop-btn {
+        width: 42px; height: 26px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+        border-radius: 999px;
+        cursor: pointer;
+        line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .player-btn:hover:not(:disabled),
+    .player-stop-btn:hover:not(:disabled) {
+        background: var(--color-background-secondary);
+        border-color: var(--color-border-primary);
+    }
+    .player-btn.playing {
+        background: var(--color-text-info);
+        color: var(--color-background-primary);
+        border-color: var(--color-text-info);
+    }
+    .player-btn:disabled,
+    .player-stop-btn:disabled {
+        cursor: default;
+        opacity: 0.4;
+    }
+    .player-glyph {
+        font-size: 12px;
+        line-height: 1;
+        display: inline-block;
+    }
+    .player-btn .player-glyph { transform: translateX(1px); }
+    .player-btn.playing .player-glyph { transform: translateX(0); }
+
+    .player-progress {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .player-time {
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        font-variant-numeric: tabular-nums;
+        min-width: 36px;
+        text-align: center;
+    }
+    .player-slider { flex: 1; }
+    .player-slider:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
+    .empty-icon { font-size: 36px; margin-bottom: 12px; }
+
+    .spinner {
+        width: 14px; height: 14px;
+        border: 1.8px solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        display: inline-block;
+    }
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Mobile breakpoint, up to 768px — analogicznie do ProgramDetails. */
+    @@media (max-width: 768px) {
+        .page-wrap { padding: 16px; }
+        .page-header { flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+        h1 { font-size: 20px; }
+        .meditation-card { padding: 18px 18px 0; }
+        .card-header { gap: 14px; margin-bottom: 14px; }
+        .card-avatar { width: 80px; height: 80px; }
+        .gold-bar { padding: 10px 18px; margin: 0 -18px; }
+        .gold-bar-icon { font-size: 16px; }
+        .gold-bar-item { font-size: 14px; gap: 6px; }
+        .player-bar { margin: 0 -18px; padding: 10px 18px 12px; }
+    }
+</style>

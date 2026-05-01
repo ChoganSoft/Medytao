@@ -43,6 +43,21 @@ public class MeditationRepository(AppDbContext db) : IMeditationRepository
             .OrderByDescending(m => m.UpdatedAt)
             .ToListAsync(ct);
 
+    public async Task<IEnumerable<Meditation>> GetLibraryAsync(Guid userId, UserRole userRole, CancellationToken ct = default) =>
+        await db.Meditations
+            // Te same Include co dla GetByAuthorAsync, bo karta library wygląda
+            // jak karta sesji (avatar + meta + gold-bar z liczbą tracków per warstwa
+            // + player-bar). Bez Tracks Include suma na gold-barze byłaby zerowa.
+            .Include(m => m.Category)
+            .Include(m => m.Layers)
+                .ThenInclude(l => l.Tracks)
+            .Where(m =>
+                m.AuthorId != userId &&                          // tylko cudze (własne user widzi w swoich programach)
+                m.Status == MeditationStatus.Published &&        // Published = "udostępnione do biblioteki"
+                m.MinRoleRequired <= userRole)                    // role gating per sesja
+            .OrderByDescending(m => m.UpdatedAt)
+            .ToListAsync(ct);
+
     public async Task AddAsync(Meditation meditation, CancellationToken ct = default) =>
         await db.Meditations.AddAsync(meditation, ct);
 

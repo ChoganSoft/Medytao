@@ -102,8 +102,9 @@ if (app.Environment.IsDevelopment())
 
     // EnsureCreated nie dodaje brakujących kolumn do istniejących tabel
     // (to nie jest migracja). Dla istniejących baz dev manualnie ALTER TABLE,
-    // idempotentnie. Po przejściu na formalne migracje EF tę funkcję skasujemy.
+    // idempotentnie. Po przejściu na formalne migracje EF te funkcje skasujemy.
     await EnsureUserRoleColumnAsync(db);
+    await EnsureMeditationMinRoleColumnAsync(db);
 
     // Migracja danych dla feature'a programów: userzy zarejestrowani przed
     // wprowadzeniem programów nie mają żadnego programu. Tworzymy im domyślny
@@ -187,6 +188,24 @@ static async Task EnsureUserRoleColumnAsync(AppDbContext db)
             )
         BEGIN
             ALTER TABLE Users ADD Role INT NOT NULL DEFAULT 0;
+        END
+    """;
+    await db.Database.ExecuteSqlRawAsync(sql);
+}
+
+// Idempotentne dodanie kolumny MinRoleRequired do tabeli Meditations.
+// Default 0 = UserRole.Free → istniejące Published medytacje są widoczne
+// dla wszystkich (nie chcemy ich nagle ukrywać po wprowadzeniu sharing systemu).
+static async Task EnsureMeditationMinRoleColumnAsync(AppDbContext db)
+{
+    const string sql = """
+        IF EXISTS (SELECT 1 FROM sys.tables WHERE name = N'Meditations')
+            AND NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE Name = N'MinRoleRequired' AND Object_ID = Object_ID(N'Meditations')
+            )
+        BEGIN
+            ALTER TABLE Meditations ADD MinRoleRequired INT NOT NULL DEFAULT 0;
         END
     """;
     await db.Database.ExecuteSqlRawAsync(sql);

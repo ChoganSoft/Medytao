@@ -1,10 +1,16 @@
 using MediatR;
+using Medytao.Domain.Enums;
 using Medytao.Domain.Interfaces;
 using Medytao.Shared.Models;
 
 namespace Medytao.Application.Meditations.Queries;
 
-public record GetMeditationByIdQuery(Guid Id) : IRequest<MeditationDetailDto>;
+// UserId + UserRole w query — handler sprawdza visibility:
+//   - Właściciel widzi zawsze (każdy Status, każdy MinRoleRequired).
+//   - Inny user widzi tylko gdy Status == Published AND MinRoleRequired <= role.
+//   - Reszta → KeyNotFound (świadomie 404 zamiast 403, żeby nie wyciekać
+//     informacji o istnieniu prywatnej sesji).
+public record GetMeditationByIdQuery(Guid Id, Guid UserId, UserRole UserRole) : IRequest<MeditationDetailDto>;
 
 public class GetMeditationByIdHandler(IMeditationRepository repo, IStorageService storage)
     : IRequestHandler<GetMeditationByIdQuery, MeditationDetailDto>
@@ -13,6 +19,12 @@ public class GetMeditationByIdHandler(IMeditationRepository repo, IStorageServic
     {
         var m = await repo.GetByIdAsync(query.Id, ct)
             ?? throw new KeyNotFoundException($"Meditation {query.Id} not found.");
+
+        var isOwner = m.AuthorId == query.UserId;
+        var isPubliclyVisible = m.Status == MeditationStatus.Published
+            && m.MinRoleRequired <= query.UserRole;
+        if (!isOwner && !isPubliclyVisible)
+            throw new KeyNotFoundException($"Meditation {query.Id} not found.");
 
         return new MeditationDetailDto(
             m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
@@ -47,6 +59,26 @@ public class GetMeditationsByAuthorHandler(IMeditationRepository repo)
     public async Task<IEnumerable<MeditationSummaryDto>> Handle(GetMeditationsByAuthorQuery query, CancellationToken ct)
     {
         var meditations = await repo.GetByAuthorAsync(query.AuthorId, ct);
+        return meditations.Select(m => new MeditationSummaryDto(
+            m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
+            m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
+            m.CategoryId,
+            m.Category?.Name));
+    }
+}
+
+// Library query — wszystkie sesje opublikowane przez innych userów, dla
+// których bieżący user spełnia wymóg roli. UserRole jako parametr (nie
+// pobierane z claim wewnątrz handlera) — handler nie ma dostępu do
+// HttpContext, rola pochodzi z endpoint-a (ClaimsPrincipal.GetUserRole).
+public record GetLibraryQuery(Guid UserId, UserRole UserRole) : IRequest<IEnumerable<MeditationSummaryDto>>;
+
+public class GetLibraryHandler(IMeditationRepository repo)
+    : IRequestHandler<GetLibraryQuery, IEnumerable<MeditationSummaryDto>>
+{
+    public async Task<IEnumerable<MeditationSummaryDto>> Handle(GetLibraryQuery query, CancellationToken ct)
+    {
+        var meditations = await repo.GetLibraryAsync(query.UserId, query.UserRole, ct);
         return meditations.Select(m => new MeditationSummaryDto(
             m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
             m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
