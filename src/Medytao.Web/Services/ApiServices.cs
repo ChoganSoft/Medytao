@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Blazored.LocalStorage;
+using Medytao.Domain.Enums;
 using Medytao.Shared.Models;
 
 namespace Medytao.Web.Services;
@@ -10,6 +11,32 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
     private const string TokenKey = "auth_token";
     private bool _initialized;
 
+    // Cache roli usera czytanej z AuthTokenDto.Role (string z backendu).
+    // Domyślnie Free — fallback dla starszych tokenów sprzed RBAC, które
+    // nie miały pola Role w DTO (po deserializacji string jest pusty,
+    // Enum.TryParse failuje). UI używa tego jako synchroniczny accessor
+    // po await Auth.InitializeAsync() — strony robią to w OnInitializedAsync,
+    // więc property jest gotowa zanim się render-uje markup.
+    private UserRole _currentRole = UserRole.Free;
+
+    /// <summary>
+    /// Sygnalizuje zmianę stanu auth (login / logout / register / refresh).
+    /// MainLayout subskrybuje, żeby re-renderować nav podczas zmiany roli.
+    /// </summary>
+    public event Action? OnChanged;
+
+    /// <summary>
+    /// Aktualna rola usera (Free dla niezalogowanych i tokenów sprzed RBAC).
+    /// Sync accessor — wymaga uprzedniego <see cref="InitializeAsync"/>.
+    /// </summary>
+    public UserRole CurrentRole => _currentRole;
+
+    /// <summary>
+    /// Hierarchical check: <c>IsAtLeast(Master)</c> jest true dla Master i Guru.
+    /// Skrót dla wzorca <c>CurrentRole &gt;= min</c> w UI markup.
+    /// </summary>
+    public bool IsAtLeast(UserRole min) => _currentRole >= min;
+
     public async Task<bool> LoginAsync(string email, string password)
     {
         var response = await http.PostAsJsonAsync("/api/v1/auth/login", new { email, password });
@@ -18,7 +45,9 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         if (token is null) return false;
         await storage.SetItemAsync(TokenKey, token);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        _currentRole = ParseRole(token.Role);
         _initialized = true;
+        OnChanged?.Invoke();
         return true;
     }
 
@@ -30,7 +59,9 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         if (token is null) return false;
         await storage.SetItemAsync(TokenKey, token);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        _currentRole = ParseRole(token.Role);
         _initialized = true;
+        OnChanged?.Invoke();
         return true;
     }
 
@@ -39,7 +70,10 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         if (_initialized) return;
         var token = await storage.GetItemAsync<AuthTokenDto>(TokenKey);
         if (token is not null && token.ExpiresAt > DateTimeOffset.UtcNow)
+        {
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+            _currentRole = ParseRole(token.Role);
+        }
         _initialized = true;
     }
 
@@ -53,7 +87,18 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
     {
         await storage.RemoveItemAsync(TokenKey);
         http.DefaultRequestHeaders.Authorization = null;
+        _currentRole = UserRole.Free;
         _initialized = false;
+        OnChanged?.Invoke();
+    }
+
+    // Parser tolerancyjny: case-insensitive + null/empty-safe. Stare tokeny
+    // sprzed RBAC nie mają pola Role w DTO (Role == "" po deserializacji)
+    // → fallback Free, najmniej uprzywilejowana rola, bezpieczna.
+    private static UserRole ParseRole(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return UserRole.Free;
+        return Enum.TryParse<UserRole>(raw, ignoreCase: true, out var role) ? role : UserRole.Free;
     }
 }
 

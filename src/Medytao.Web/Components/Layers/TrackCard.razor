@@ -1,6 +1,7 @@
 @using Medytao.Shared.Models
 @inject MeditationService MeditationSvc
 @inject PlaybackSessionService PlaybackSession
+@inject AuthService Auth
 
 <div class="track-card @(IsExpanded ? "expanded" : "") @(IsCurrent ? "current" : "")">
     <!-- Main row -->
@@ -147,7 +148,12 @@
                moment master-clocka, w którym track ma wystartować. Dla warstwy
                Text/Fx silnik odpala overlay; dla Music/Nature na razie tylko
                persistujemy wartość — info pod inputem mówi "coming soon".
-               Toggle off = StartAtMs zostaje wyzerowane (null) → tryb sekwencyjny. *@
+               Toggle off = StartAtMs zostaje wyzerowane (null) → tryb sekwencyjny.
+               RBAC: tryb time-anchored to feature Guru. Master widzi tylko
+               sequenced workflow (cały blok schowany). Backend dodatkowo
+               odrzuca PUT /tracks z StartAtMs != null gdy rola < Guru. *@
+            @if (Auth.IsAtLeast(UserRole.Guru))
+            {
             <div class="detail-row start-at-row">
                 <label class="start-at-toggle">
                     <input type="checkbox" checked="@_startAtEnabled" @onchange="OnStartAtToggle" />
@@ -162,6 +168,7 @@
                     <span class="start-at-note" title="@StartAtNoteTitle()">@StartAtNoteText()</span>
                 }
             </div>
+            }
 
             <div class="detail-actions">
                 <button class="btn-save" @onclick="SaveDetail">Save changes</button>

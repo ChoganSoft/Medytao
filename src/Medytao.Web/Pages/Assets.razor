@@ -15,10 +15,16 @@
             <h1>@_currentLayer library</h1>
             <p class="subtitle">@SubtitleFor(_currentLayer)</p>
         </div>
-        <label class="btn-primary">
-            + Upload @_currentLayer.ToLowerInvariant()
-            <InputFile @ref="_fileInput" OnChange="HandleUpload" accept="@AcceptForLayer(_currentLayer)" multiple style="display:none" />
-        </label>
+        @* Upload tylko dla Master+. Free/Apprentice widzą listę assetów
+           (przeglądanie shared / własnych jeśli kiedyś byli wyższą rolą)
+           ale nie wgrywają nowych — backend blokuje POST /upload. *@
+        @if (Auth.IsAtLeast(UserRole.Master))
+        {
+            <label class="btn-primary">
+                + Upload @_currentLayer.ToLowerInvariant()
+                <InputFile @ref="_fileInput" OnChange="HandleUpload" accept="@AcceptForLayer(_currentLayer)" multiple style="display:none" />
+            </label>
+        }
     </div>
 
     @if (_uploading)

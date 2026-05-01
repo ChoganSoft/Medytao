@@ -9,7 +9,14 @@
             <h1>My programs</h1>
             <p class="subtitle">Organise sessions into programs</p>
         </div>
-        <button class="btn-primary" @onclick="CreateNew">+ New program</button>
+        @* "+ New program" tylko dla Master+. Free i Apprentice mogą jedynie
+           odsłuchiwać gotowe sesje (sharing system TBD); na razie widzą swój
+           default program (auto-seed przy rejestracji) bez akcji tworzenia /
+           edycji / usuwania. *@
+        @if (Auth.IsAtLeast(UserRole.Master))
+        {
+            <button class="btn-primary" @onclick="CreateNew">+ New program</button>
+        }
     </div>
 
     @if (_loading)
@@ -20,8 +27,15 @@
     {
         <div class="empty-state">
             <div class="empty-icon">◎</div>
-            <p>No programs yet. Create your first one.</p>
-            <button class="btn-primary" @onclick="CreateNew">+ New program</button>
+            @if (Auth.IsAtLeast(UserRole.Master))
+            {
+                <p>No programs yet. Create your first one.</p>
+                <button class="btn-primary" @onclick="CreateNew">+ New program</button>
+            }
+            else
+            {
+                <p>No programs available yet. Upgrade to Master to create your own sessions.</p>
+            }
         </div>
     }
     else
@@ -75,14 +89,22 @@
 
                     <div class="card-footer-meta">Created @p.CreatedAt.ToString("MMM d, yyyy")</div>
 
-                    <div class="card-actions">
-                        @* Edit — ołówek, sama nazwa + opis. Delete — FA xmark.
-                           Enter wcześniej był tutaj, teraz siedzi na gold-bar. *@
-                        <button class="edit-btn" @onclick="() => BeginEdit(p)" title="Edit">✎</button>
-                        <button class="delete-btn" @onclick="() => ConfirmDelete(p)" title="Delete">
-                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                        </button>
-                    </div>
+                    @* Edit/Delete tylko dla Master+. Free/Apprentice widzą
+                       default program ale nie zarządzają nim — backend i tak
+                       blokuje (RequireMaster na PUT/DELETE programs), tu
+                       tylko sprzątamy UI. Cały blok znika gdy nie ma akcji,
+                       żeby pusty wiersz nie zajmował miejsca. *@
+                    @if (Auth.IsAtLeast(UserRole.Master))
+                    {
+                        <div class="card-actions">
+                            @* Edit — ołówek, sama nazwa + opis. Delete — FA xmark.
+                               Enter wcześniej był tutaj, teraz siedzi na gold-bar. *@
+                            <button class="edit-btn" @onclick="() => BeginEdit(p)" title="Edit">✎</button>
+                            <button class="delete-btn" @onclick="() => ConfirmDelete(p)" title="Delete">
+                                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    }
                 </div>
             }
         </div>
