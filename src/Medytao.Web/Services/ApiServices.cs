@@ -136,8 +136,23 @@ public class MeditationService(HttpClient http)
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
     }
 
-    public Task PublishAsync(Guid id) =>
-        http.PostAsync($"/api/v1/meditations/{id}/publish", null);
+    // Publish + sharing config: minRole jako string nazwy enuma (Free/Apprentice/
+    // Master/Guru). Backend toleruje null/pusto → fallback Free. Zwraca DTO,
+    // żeby UI mogło bez refetcha pokazać nowy Status + MinRoleRequired.
+    public async Task<MeditationSummaryDto?> PublishAsync(Guid id, string? minRoleRequired = null)
+    {
+        var response = await http.PostAsJsonAsync($"/api/v1/meditations/{id}/publish",
+            new { minRoleRequired });
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
+    }
+
+    // Unpublish — Status=Published → Draft. MinRoleRequired zostaje na backendzie
+    // bez zmian (przy ponownym Publish autor może użyć tego samego ustawienia).
+    public async Task<MeditationSummaryDto?> UnpublishAsync(Guid id)
+    {
+        var response = await http.PostAsync($"/api/v1/meditations/{id}/unpublish", null);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
+    }
 
     // Duplikat trafia do tych samych programów co source (po stronie backendu).
     // Zwraca DTO nowej medytacji albo null gdy source nie istnieje / brak uprawnień.

@@ -76,6 +76,9 @@ public record LayerDto(
 // CategoryId + CategoryName: opcjonalne (legacy medytacje mogą nie mieć
 // kategorii, a usunięcie kategorii zeruje FK). UI renderuje badge tylko
 // gdy CategoryName != null.
+// MinRoleRequired: nazwa wartości UserRole (Free/Apprentice/Master/Guru) —
+// minimalna rola żeby zobaczyć sesję w bibliotece, gdy Status == Published.
+// Dla Status == Draft pole nie ma znaczenia (widzi tylko właściciel).
 public record MeditationSummaryDto(
     Guid Id,
     string Title,
@@ -85,7 +88,8 @@ public record MeditationSummaryDto(
     DateTimeOffset CreatedAt,
     Dictionary<string, int> TracksByLayerType,
     Guid? CategoryId,
-    string? CategoryName
+    string? CategoryName,
+    string MinRoleRequired
 );
 
 public record MeditationDetailDto(
@@ -97,7 +101,8 @@ public record MeditationDetailDto(
     DateTimeOffset CreatedAt,
     IEnumerable<LayerDto> Layers,
     Guid? CategoryId,
-    string? CategoryName
+    string? CategoryName,
+    string MinRoleRequired
 );
 
 // ── Program ────────────────────────────────────────────

@@ -175,7 +175,11 @@ public class DuplicateMeditationHandler(IMeditationRepository repo, IUnitOfWork 
 }
 
 // ── Publish ────────────────────────────────────────────────────────────────────
-public record PublishMeditationCommand(Guid Id) : IRequest<MeditationSummaryDto>;
+// AuthorId domknięty w command — tylko właściciel może publikować swoją sesję.
+// MinRoleRequired wybiera widoczność w bibliotece: domyślnie Free (każdy widzi),
+// autor może podnieść próg dla "wyższych pakietów". Można re-publikować już-Published
+// sesję żeby zmienić tylko MinRoleRequired bez Unpublish/Publish ping-pong'u.
+public record PublishMeditationCommand(Guid Id, Guid AuthorId, Domain.Enums.UserRole MinRoleRequired) : IRequest<MeditationSummaryDto>;
 
 public class PublishMeditationHandler(IMeditationRepository repo, IUnitOfWork uow)
     : IRequestHandler<PublishMeditationCommand, MeditationSummaryDto>
@@ -185,7 +189,37 @@ public class PublishMeditationHandler(IMeditationRepository repo, IUnitOfWork uo
         var meditation = await repo.GetByIdAsync(cmd.Id, ct)
             ?? throw new KeyNotFoundException($"Meditation {cmd.Id} not found.");
 
+        if (meditation.AuthorId != cmd.AuthorId)
+            throw new UnauthorizedAccessException("Cannot publish someone else's meditation.");
+
         meditation.Status = Domain.Enums.MeditationStatus.Published;
+        meditation.MinRoleRequired = cmd.MinRoleRequired;
+        meditation.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await repo.UpdateAsync(meditation, ct);
+        await uow.SaveChangesAsync(ct);
+        return meditation.ToSummaryDto();
+    }
+}
+
+// ── Unpublish ─────────────────────────────────────────────────────────────────
+// Przywraca sesję do Draft — znika z biblioteki, widzi tylko właściciel.
+// MinRoleRequired zostawiamy bez zmian — przy ponownym Publish autor może
+// wybrać tę samą lub inną widoczność, bez tracenia poprzedniego ustawienia.
+public record UnpublishMeditationCommand(Guid Id, Guid AuthorId) : IRequest<MeditationSummaryDto>;
+
+public class UnpublishMeditationHandler(IMeditationRepository repo, IUnitOfWork uow)
+    : IRequestHandler<UnpublishMeditationCommand, MeditationSummaryDto>
+{
+    public async Task<MeditationSummaryDto> Handle(UnpublishMeditationCommand cmd, CancellationToken ct)
+    {
+        var meditation = await repo.GetByIdAsync(cmd.Id, ct)
+            ?? throw new KeyNotFoundException($"Meditation {cmd.Id} not found.");
+
+        if (meditation.AuthorId != cmd.AuthorId)
+            throw new UnauthorizedAccessException("Cannot unpublish someone else's meditation.");
+
+        meditation.Status = Domain.Enums.MeditationStatus.Draft;
         meditation.UpdatedAt = DateTimeOffset.UtcNow;
 
         await repo.UpdateAsync(meditation, ct);
@@ -208,5 +242,6 @@ internal static class MeditationMappings
         // w Create są pustymi listami — Count zwraca 0.
         m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
         m.CategoryId,
-        categoryNameOverride ?? m.Category?.Name);
+        categoryNameOverride ?? m.Category?.Name,
+        m.MinRoleRequired.ToString());
 }
