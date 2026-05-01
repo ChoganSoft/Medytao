@@ -44,6 +44,16 @@
                 <i class="nav-icon fa-solid fa-tags" aria-hidden="true"></i>
                 <span class="nav-label">Categories</span>
             </NavLink>
+            @* User management — Admin only. Niższe role nie widzą linku
+               (i tak backend blokuje endpointy przez RequireAdmin policy +
+               strona Users ma route guard, ale tu sprzątamy UI). *@
+            @if (Auth.IsAtLeast(UserRole.Admin))
+            {
+                <NavLink href="/users" class="nav-item" title="Users">
+                    <i class="nav-icon fa-solid fa-user-shield" aria-hidden="true"></i>
+                    <span class="nav-label">Users</span>
+                </NavLink>
+            }
 
             @* Każda warstwa = osobna pozycja w menu. Kolejność: Text → Music →
                Nature → Fx, identycznie jak w edytorze medytacji
@@ -201,6 +211,7 @@
         {
             "categories" => "Categories",
             "library" => "Library",
+            "users" => "Users",
             "login" => "Login",
             "register" => "Register",
             // Każda warstwa ma własny breadcrumb — żeby user widział w jakiej

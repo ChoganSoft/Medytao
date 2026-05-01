@@ -1,0 +1,272 @@
+@page "/users"
+@inject UserService UserSvc
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+@* Strona zarządzania userami — Admin only. Route guard w OnInitializedAsync
+   redirectuje niższe role na "/". Lista ładowana raz; zmiana roli inline
+   (dropdown + Save), bez modali. *@
+
+<div class="page-wrap">
+    <div class="page-header">
+        <div>
+            <h1>Users</h1>
+            <p class="subtitle">Manage user roles</p>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="empty-state">Loading…</div>
+    }
+    else if (!string.IsNullOrEmpty(_pageError))
+    {
+        <div class="form-error">@_pageError</div>
+    }
+    else
+    {
+        <div class="user-list">
+            @foreach (var u in _users)
+            {
+                var isSelf = u.Id == _currentUserId;
+                var isAdmin = string.Equals(u.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+                var locked = isSelf || isAdmin;
+                var draft = _draftRoles.TryGetValue(u.Id, out var d) ? d : u.Role;
+                var changed = !string.Equals(draft, u.Role, StringComparison.OrdinalIgnoreCase);
+                var rowError = _rowErrors.TryGetValue(u.Id, out var err) ? err : null;
+                var saving = _savingId == u.Id;
+
+                <div class="user-row @(locked ? "locked" : "")">
+                    <div class="user-info">
+                        <span class="user-name">@u.DisplayName</span>
+                        <span class="user-email">@u.Email</span>
+                        @if (isSelf)
+                        {
+                            <span class="self-badge">you</span>
+                        }
+                    </div>
+                    <div class="user-role-control">
+                        @if (locked)
+                        {
+                            @* Self-row i inni Admins zablokowani — pokazujemy
+                               aktualną rolę jako tekst zamiast dropdownu. Tooltip
+                               wyjaśnia czemu. *@
+                            <span class="role-static" title="@(isSelf ? "Cannot change your own role" : "Cannot change another admin's role")">
+                                @u.Role
+                            </span>
+                        }
+                        else
+                        {
+                            <select class="role-select"
+                                    value="@draft"
+                                    @onchange="e => OnDraftChange(u.Id, e.Value?.ToString() ?? u.Role)"
+                                    disabled="@saving">
+                                <option value="Free">Free</option>
+                                <option value="Apprentice">Apprentice</option>
+                                <option value="Master">Master</option>
+                                <option value="Guru">Guru</option>
+                            </select>
+                            <button class="btn-primary save-role-btn"
+                                    @onclick="() => SaveRole(u)"
+                                    disabled="@(!changed || saving)">
+                                @(saving ? "Saving…" : "Save")
+                            </button>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(rowError))
+                    {
+                        <div class="row-error">@rowError</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<UserDto> _users = [];
+    private bool _loading = true;
+    private string? _pageError;
+    private Guid _currentUserId;
+    // Stan edycji per-wiersz: _draftRoles trzyma wybrane wartości w dropdownach
+    // (zanim user kliknie Save — sync UI bez wywołań HTTP), _savingId blokuje
+    // double-click, _rowErrors pokazuje błąd per wiersz pod selectem.
+    private readonly Dictionary<Guid, string> _draftRoles = new();
+    private Guid? _savingId;
+    private readonly Dictionary<Guid, string> _rowErrors = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+        if (!await Auth.IsAuthenticatedAsync())
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        // Route guard — Admin only. Niższe role po wpisaniu URL ręcznie
+        // dostają redirect na "/". Backend i tak blokuje (RequireAdmin),
+        // tu chroni przed pokazaniem pustej strony bez wyjaśnienia.
+        if (!Auth.IsAtLeast(UserRole.Admin))
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
+        // CurrentUserId potrzebne do oznaczenia self-row jako lockowanego.
+        // Wyciągamy z JWT przez deserializację — alternatywnie można dodać
+        // pole UserId do AuthTokenDto + AuthService; na razie czytamy z claim.
+        _currentUserId = await ResolveCurrentUserIdAsync();
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _pageError = null;
+        try
+        {
+            _users = await UserSvc.GetAllAsync() ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            _pageError = "Could not load users.";
+        }
+        _loading = false;
+    }
+
+    // Self detection — JWT ma ClaimTypes.NameIdentifier (UserId) ale frontend
+    // dziś nie wystawia ID poza tokenem. Najprostszy sposób: pobierz lookup
+    // po emailu z listy GetAllUsersAsync (który już wyświetlamy). Email
+    // tokenu jest w claim, ale musimy go zdekodować z JWT albo dodać do DTO.
+    // Dla MVP — porównujemy po Email z tym, co AuthService trzyma w tokenie
+    // (pole AuthTokenDto.DisplayName tożsame nie jest, ale Email JWT mamy).
+    // Najprostsze: po załadowaniu listy znajdź usera po email = Auth.CurrentEmail
+    // (pole którego jeszcze nie mamy — dorobię alias). Tymczasowo pomijamy:
+    // jeśli nie ma match, lock-by-Admin nadal działa (Admin row jest locked
+    // niezależnie od self-checka).
+    //
+    // Pełny refactor: dorzuć Email/Id do AuthService cache. Tu zostawiam
+    // simple Guid.Empty żeby nigdy nie matchowało, wszystkie user-rows są
+    // editowalne (oprócz Admin-rows). Self-demotion blokuje backend
+    // (UpdateUserRoleHandler sprawdza target == admin → InvalidOperationException).
+    private Task<Guid> ResolveCurrentUserIdAsync() => Task.FromResult(Guid.Empty);
+
+    private void OnDraftChange(Guid userId, string newRole)
+    {
+        _draftRoles[userId] = newRole;
+        _rowErrors.Remove(userId);
+    }
+
+    private async Task SaveRole(UserDto u)
+    {
+        if (_savingId is not null) return;
+        if (!_draftRoles.TryGetValue(u.Id, out var newRole)) return;
+        if (string.Equals(newRole, u.Role, StringComparison.OrdinalIgnoreCase)) return;
+
+        _savingId = u.Id;
+        _rowErrors.Remove(u.Id);
+        try
+        {
+            var (dto, error) = await UserSvc.UpdateRoleAsync(u.Id, newRole);
+            if (dto is not null)
+            {
+                // Zastąp w liście in-place żeby UI od razu pokazał nową rolę.
+                var idx = _users.FindIndex(x => x.Id == u.Id);
+                if (idx >= 0) _users[idx] = dto;
+                _draftRoles.Remove(u.Id);
+            }
+            else
+            {
+                _rowErrors[u.Id] = error ?? "Could not update role.";
+            }
+        }
+        finally
+        {
+            _savingId = null;
+        }
+    }
+}
+
+<style>
+    .page-wrap { padding: 32px 40px; max-width: 900px; margin: 0 auto; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+    .subtitle { color: var(--color-text-secondary); font-size: 14px; margin: 0; }
+
+    .user-list { display: flex; flex-direction: column; gap: 8px; }
+    .user-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        column-gap: 16px;
+        row-gap: 6px;
+        align-items: center;
+        padding: 14px 18px;
+        background: var(--color-background-primary);
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: 8px;
+    }
+    .user-row.locked { opacity: 0.85; }
+
+    .user-info { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex-wrap: wrap; }
+    .user-name { font-size: 14px; font-weight: 500; }
+    .user-email { font-size: 13px; color: var(--color-text-secondary); }
+    .self-badge {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--color-background-info);
+        color: var(--color-text-info);
+        font-weight: 600;
+    }
+
+    .user-role-control { display: flex; align-items: center; gap: 8px; }
+    .role-select {
+        padding: 7px 12px; border-radius: 6px; font-size: 14px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+        appearance: auto; padding-right: 28px;
+    }
+    .role-static {
+        font-size: 13px;
+        color: var(--color-text-tertiary);
+        font-style: italic;
+        padding: 7px 12px;
+    }
+    .save-role-btn {
+        padding: 7px 14px; border-radius: 6px;
+        background: var(--color-text-primary); color: var(--color-background-primary);
+        border: none; font-size: 13px; font-weight: 500; cursor: pointer;
+    }
+    .save-role-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .row-error {
+        grid-column: 1 / -1;
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+    .form-error {
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 14px;
+    }
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-secondary); }
+
+    @@media (max-width: 768px) {
+        .page-wrap { padding: 16px; }
+        .user-row {
+            grid-template-columns: 1fr;
+        }
+        .user-role-control { justify-content: flex-end; }
+    }
+</style>

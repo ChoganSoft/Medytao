@@ -231,6 +231,32 @@ public class ProgramService(HttpClient http)
         http.DeleteAsync($"/api/v1/programs/{id}");
 }
 
+// User management — Admin only. Endpointy backendowe wymagają RequireAdmin
+// policy, frontend używa ich tylko ze strony /users (route guard + sidebar
+// link conditional pilnują że niższe role tu nie wchodzą). UpdateRoleAsync
+// zwraca tuple (Dto, Error) żeby UI mógł pokazać komunikat (np. "cannot
+// change another admin's role" z handlera).
+public class UserService(HttpClient http)
+{
+    public Task<List<UserDto>?> GetAllAsync() =>
+        http.GetFromJsonAsync<List<UserDto>>("/api/v1/users");
+
+    public async Task<(UserDto? Dto, string? Error)> UpdateRoleAsync(Guid userId, string role)
+    {
+        var response = await http.PutAsJsonAsync($"/api/v1/users/{userId}/role", new { role });
+        if (response.IsSuccessStatusCode)
+        {
+            var dto = await response.Content.ReadFromJsonAsync<UserDto>();
+            return (dto, null);
+        }
+        var body = await response.Content.ReadAsStringAsync();
+        var msg = string.IsNullOrWhiteSpace(body)
+            ? $"Server returned {(int)response.StatusCode} {response.ReasonPhrase}."
+            : body;
+        return (null, msg);
+    }
+}
+
 public class CategoryService(HttpClient http)
 {
     public Task<List<CategorySummaryDto>?> GetAllAsync() =>
