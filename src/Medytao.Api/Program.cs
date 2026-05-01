@@ -209,7 +209,10 @@ static async Task SeedUserRolesAsync(AppDbContext db, IConfiguration cfg)
         var email = entry.Key.ToLowerInvariant();
         var roleStr = entry.Value;
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(roleStr)) continue;
-        if (!Enum.TryParse<UserRole>(roleStr, ignoreCase: false, out var role))
+        // ignoreCase:true — toleruje "guru"/"GURU"/"Guru". Nazwy ról
+        // w appsettings są dla człowieka, niech literówka wielkości liter
+        // nie wymagała czytania kodu źródłowego.
+        if (!Enum.TryParse<UserRole>(roleStr, ignoreCase: true, out var role))
         {
             Console.WriteLine($"[RoleSeed] Unknown role '{roleStr}' for {email}; skipping.");
             continue;
