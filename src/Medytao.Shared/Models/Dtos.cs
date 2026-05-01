@@ -143,3 +143,15 @@ public record CategorySummaryDto(
 // ale zawarcie w DTO oszczędza JWT-decoder przy świeżym tokenie zwróconym
 // z login/register (frontend od razu wie jaką rolę dostał user).
 public record AuthTokenDto(string AccessToken, DateTimeOffset ExpiresAt, string DisplayName, string Role);
+
+// ── User management ────────────────────────────────────
+// Lista userów na stronie /users (Admin only). DisplayName i Email do
+// identyfikacji, Role do dropdown'u zmiany. Brak hasła, programów ani innych
+// detali — to tylko widok zarządczy.
+public record UserDto(
+    Guid Id,
+    string Email,
+    string DisplayName,
+    string Role,
+    DateTimeOffset CreatedAt
+);

@@ -77,6 +77,9 @@ public interface IUserRepository
 {
     Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
+    // Użyte przez panel Users (Admin only). Brak paginacji — listę renderuje
+    // jednorazowo strona /users; przy znacznym wzroście liczby userów dorobimy.
+    Task<IEnumerable<User>> GetAllAsync(CancellationToken ct = default);
     Task AddAsync(User user, CancellationToken ct = default);
     Task UpdateAsync(User user, CancellationToken ct = default);
 }

@@ -78,7 +78,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // widzi body requestu.
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RequireMaster", p => p.RequireAssertion(ctx => ctx.User.IsAtLeast(UserRole.Master)))
-    .AddPolicy("RequireGuru", p => p.RequireAssertion(ctx => ctx.User.IsAtLeast(UserRole.Guru)));
+    .AddPolicy("RequireGuru", p => p.RequireAssertion(ctx => ctx.User.IsAtLeast(UserRole.Guru)))
+    // Admin policy — strikt, nie hierarchical-or-above. Admin to operacyjna
+    // rola separowana od content-roles; wszystkie endpointy user management
+    // wymagają DOKŁADNIE Admin (nawet Guru ich nie dostaje, mimo że jest
+    // niżej w intowanej hierarchii — IsAtLeast(Admin) i tak działa identycznie
+    // bo jest to najwyższa wartość).
+    .AddPolicy("RequireAdmin", p => p.RequireAssertion(ctx => ctx.User.IsAtLeast(UserRole.Admin)));
 builder.Services.AddSignalR();
 builder.Services.AddOpenApi();
 
@@ -288,6 +294,7 @@ api.MapCategoryEndpoints();
 api.MapMeditationEndpoints();
 api.MapLayerEndpoints();
 api.MapAssetEndpoints();
+api.MapUserEndpoints();
 
 app.MapHub<PreviewHub>("/hubs/preview");
 

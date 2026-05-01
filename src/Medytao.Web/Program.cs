@@ -17,6 +17,7 @@ builder.Services.AddScoped<MeditationService>();
 builder.Services.AddScoped<ProgramService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<AssetService>();
+builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<PreviewHubService>();
 builder.Services.AddScoped<PlaybackSessionService>();
 builder.Services.AddScoped<ThemeService>();

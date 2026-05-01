@@ -179,6 +179,11 @@ public class UserRepository(AppDbContext db) : IUserRepository
     public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
         db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
 
+    public async Task<IEnumerable<User>> GetAllAsync(CancellationToken ct = default) =>
+        // Sortowanie po Email asc — strona /users nie ma search, więc alfabetyczna
+        // kolejność jest najbardziej intuicyjna do scanowania długiej listy.
+        await db.Users.OrderBy(u => u.Email).ToListAsync(ct);
+
     public async Task AddAsync(User user, CancellationToken ct = default) =>
         await db.Users.AddAsync(user, ct);
 
