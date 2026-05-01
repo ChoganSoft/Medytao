@@ -12,6 +12,13 @@ public class Meditation : BaseEntity
     public int DurationMs { get; set; }
     public MeditationStatus Status { get; set; } = MeditationStatus.Draft;
 
+    // Minimalna rola do widoczności w bibliotece, gdy Status == Published.
+    // Default Free = każdy zalogowany user widzi. Publishing UI w MeditationEditor
+    // pozwala autorowi (Master+) podnieść próg, jeśli sesja jest dla "wyższych ról".
+    // Dla Status == Draft to pole nie ma znaczenia (sesja niewidoczna dla nikogo
+    // poza autorem niezależnie od MinRoleRequired).
+    public UserRole MinRoleRequired { get; set; } = UserRole.Free;
+
     // Kategoria medytacji — opcjonalna w schemacie (nullable FK). Powody:
     //  - legacy medytacje z przed feature'a nie mają przypisania,
     //  - przy usunięciu kategorii stawiamy FK na NULL (DeleteBehavior.SetNull),

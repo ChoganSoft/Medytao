@@ -8,6 +8,11 @@ public interface IMeditationRepository
     Task<Meditation?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<IEnumerable<Meditation>> GetByAuthorAsync(Guid authorId, CancellationToken ct = default);
     Task<IEnumerable<Meditation>> GetByProgramAsync(Guid programId, CancellationToken ct = default);
+    // Library = wszystkie sesje opublikowane przez innych userów, dla których
+    // bieżący user spełnia wymóg roli (m.MinRoleRequired <= role). Wyklucza
+    // własne sesje usera (one są dostępne pod swoim programem). Sortowane
+    // po UpdatedAt malejąco — najnowsze publikacje na górze.
+    Task<IEnumerable<Meditation>> GetLibraryAsync(Guid userId, UserRole userRole, CancellationToken ct = default);
     Task AddAsync(Meditation meditation, CancellationToken ct = default);
     Task UpdateAsync(Meditation meditation, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);

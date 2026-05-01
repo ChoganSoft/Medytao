@@ -18,9 +18,20 @@ public static class MeditationEndpoints
             return Results.Ok(result);
         });
 
-        group.MapGet("/{id:guid}", async (Guid id, IMediator mediator) =>
+        // Library — sesje opublikowane przez innych userów, filtr po MinRoleRequired.
+        // Każdy zalogowany user może czytać; visibility per-sesja jest egzekwowana
+        // w handlerze (tylko Status==Published, MinRoleRequired<=user.Role, AuthorId!=user).
+        // Endpoint świadomie przed /{id:guid}, żeby route matching nie próbował
+        // sparsować "library" jako Guid.
+        group.MapGet("/library", async (ClaimsPrincipal user, IMediator mediator) =>
         {
-            var result = await mediator.Send(new GetMeditationByIdQuery(id));
+            var result = await mediator.Send(new GetLibraryQuery(user.GetUserId(), user.GetUserRole()));
+            return Results.Ok(result);
+        });
+
+        group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal user, IMediator mediator) =>
+        {
+            var result = await mediator.Send(new GetMeditationByIdQuery(id, user.GetUserId(), user.GetUserRole()));
             return Results.Ok(result);
         });
 

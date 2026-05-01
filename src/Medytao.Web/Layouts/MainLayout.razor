@@ -32,6 +32,14 @@
                 <i class="nav-icon fa-solid fa-layer-group" aria-hidden="true"></i>
                 <span class="nav-label">My programs</span>
             </NavLink>
+            @* Library — shared sesje opublikowane przez innych autorów,
+               filtrowane po MinRoleRequired po stronie backendu. Widoczna
+               dla wszystkich ról; dla Free i Apprentice to obecnie jedyne
+               źródło sesji do odsłuchu. *@
+            <NavLink href="/library" class="nav-item" title="Library">
+                <i class="nav-icon fa-solid fa-globe" aria-hidden="true"></i>
+                <span class="nav-label">Library</span>
+            </NavLink>
             <NavLink href="/categories" class="nav-item" title="Categories">
                 <i class="nav-icon fa-solid fa-tags" aria-hidden="true"></i>
                 <span class="nav-label">Categories</span>
@@ -192,6 +200,7 @@
         return path switch
         {
             "categories" => "Categories",
+            "library" => "Library",
             "login" => "Login",
             "register" => "Register",
             // Każda warstwa ma własny breadcrumb — żeby user widział w jakiej
