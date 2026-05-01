@@ -19,6 +19,11 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
     // więc property jest gotowa zanim się render-uje markup.
     private UserRole _currentRole = UserRole.Free;
 
+    // Cache DisplayName z AuthTokenDto. Pokazujemy w nagłówku ("Hello, Role Name").
+    // null = nie zalogowany (po Logout zerujemy), niepusty string = zalogowany.
+    // UI używa do conditional renderowania banner-a.
+    private string? _currentDisplayName;
+
     /// <summary>
     /// Sygnalizuje zmianę stanu auth (login / logout / register / refresh).
     /// MainLayout subskrybuje, żeby re-renderować nav podczas zmiany roli.
@@ -30,6 +35,12 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
     /// Sync accessor — wymaga uprzedniego <see cref="InitializeAsync"/>.
     /// </summary>
     public UserRole CurrentRole => _currentRole;
+
+    /// <summary>
+    /// DisplayName zalogowanego usera, null gdy nie zalogowany. Sync accessor
+    /// po <see cref="InitializeAsync"/>. UI używa w nagłówku ("Hello, Role Name").
+    /// </summary>
+    public string? CurrentDisplayName => _currentDisplayName;
 
     /// <summary>
     /// Hierarchical check: <c>IsAtLeast(Master)</c> jest true dla Master i Guru.
@@ -46,6 +57,7 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         await storage.SetItemAsync(TokenKey, token);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
         _currentRole = ParseRole(token.Role);
+        _currentDisplayName = token.DisplayName;
         _initialized = true;
         OnChanged?.Invoke();
         return true;
@@ -60,6 +72,7 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         await storage.SetItemAsync(TokenKey, token);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
         _currentRole = ParseRole(token.Role);
+        _currentDisplayName = token.DisplayName;
         _initialized = true;
         OnChanged?.Invoke();
         return true;
@@ -73,6 +86,7 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         {
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
             _currentRole = ParseRole(token.Role);
+            _currentDisplayName = token.DisplayName;
         }
         _initialized = true;
     }
@@ -88,6 +102,7 @@ public class AuthService(HttpClient http, ILocalStorageService storage)
         await storage.RemoveItemAsync(TokenKey);
         http.DefaultRequestHeaders.Authorization = null;
         _currentRole = UserRole.Free;
+        _currentDisplayName = null;
         _initialized = false;
         OnChanged?.Invoke();
     }
