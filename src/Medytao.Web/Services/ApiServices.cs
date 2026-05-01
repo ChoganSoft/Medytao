@@ -121,10 +121,24 @@ public class MeditationService(HttpClient http)
     // więc id zawsze ma sensowną wartość. CategoryId opcjonalne w kontrakcie
     // (backend pozwala na null), ale modal "New meditation" wymusza wybór
     // przed wysłaniem formularza.
-    public async Task<MeditationSummaryDto?> CreateAsync(Guid programId, string title, string? description = null, Guid? categoryId = null)
+    //
+    // Zwracamy tuple (Dto, Error) zamiast samego DTO/null, żeby UI mogło pokazać
+    // konkretny komunikat błędu zamiast cichej porażki. 401/403 dla < Master,
+    // 404 gdy program/category zniknął, 5xx przy DB problem — wszystko inne
+    // niż success daje błąd z czytelnym kodem.
+    public async Task<(MeditationSummaryDto? Dto, string? Error)> CreateAsync(Guid programId, string title, string? description = null, Guid? categoryId = null)
     {
         var response = await http.PostAsJsonAsync("/api/v1/meditations", new { programId, title, description, categoryId });
-        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MeditationSummaryDto>() : null;
+        if (response.IsSuccessStatusCode)
+        {
+            var dto = await response.Content.ReadFromJsonAsync<MeditationSummaryDto>();
+            return (dto, null);
+        }
+        var body = await response.Content.ReadAsStringAsync();
+        var msg = string.IsNullOrWhiteSpace(body)
+            ? $"Server returned {(int)response.StatusCode} {response.ReasonPhrase}."
+            : $"Server returned {(int)response.StatusCode}: {body}";
+        return (null, msg);
     }
 
     // Update meta: tytuł, opis, durationMs. UI obecnie korzysta tylko z tytułu
