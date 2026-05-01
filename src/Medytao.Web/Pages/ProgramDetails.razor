@@ -260,10 +260,16 @@
                 <label>Description (optional)</label>
                 <textarea @bind="_newDesc" placeholder="What is this session for?" rows="3"></textarea>
             </div>
+            @if (!string.IsNullOrEmpty(_createError))
+            {
+                <p class="form-error">@_createError</p>
+            }
             <div class="modal-actions">
-                <button class="btn-secondary" @onclick="() => _creating = false">Cancel</button>
+                <button class="btn-secondary" @onclick="() => { _creating = false; _createError = null; }" disabled="@_creatingBusy">Cancel</button>
                 <button class="btn-primary" @onclick="ConfirmCreate"
-                        disabled="@(string.IsNullOrWhiteSpace(_newTitle) || string.IsNullOrEmpty(_newCategoryId))">Create</button>
+                        disabled="@(string.IsNullOrWhiteSpace(_newTitle) || string.IsNullOrEmpty(_newCategoryId) || _creatingBusy)">
+                    @(_creatingBusy ? "Creating…" : "Create")
+                </button>
             </div>
         </div>
     </div>
@@ -294,6 +300,11 @@
     private List<MeditationSummaryDto> _meditations = [];
     private List<CategorySummaryDto> _categories = [];
     private bool _loading = true, _creating;
+    // Stan procesu tworzenia sesji: _creatingBusy disabled-uje przyciski w modal
+    // gdy HTTP w locie, _createError przechowuje komunikat błędu od backendu
+    // (zamiast cichej porażki — user widzi czemu Create nie zadziałał).
+    private bool _creatingBusy;
+    private string? _createError;
     private string _newTitle = "", _newDesc = "";
     // String zamiast Guid?, bo <select> @bind'uje string; parsujemy w ConfirmCreate.
     // "" oznacza "nic nie wybrano" → przycisk Create pozostaje disabled.
@@ -454,19 +465,35 @@
         _newTitle = "";
         _newDesc = "";
         _newCategoryId = "";
+        _createError = null;
         _creating = true;
     }
 
     private async Task ConfirmCreate()
     {
-        // ProgramId to bieżący `Id` strony — medytacja trafia do tego konkretnego
-        // programu. Po utworzeniu nawigujemy do edytora z kontekstem programu
-        // (`?program=…`), żeby Back z edytora wracał tutaj, nie do listy programów.
-        // CategoryId parsujemy z string'a (@bind selecta) — przycisk Create jest
-        // disabled dopóki user nie wybierze, więc tu pole zawsze ma poprawny guid.
-        Guid? categoryId = Guid.TryParse(_newCategoryId, out var parsed) ? parsed : null;
-        var result = await MeditationSvc.CreateAsync(Id, _newTitle.Trim(), _newDesc.Trim(), categoryId);
-        if (result is not null) Nav.NavigateTo($"/meditations/{result.Id}?program={Id}");
+        if (_creatingBusy) return;
+        _creatingBusy = true;
+        _createError = null;
+        try
+        {
+            // ProgramId to bieżący `Id` strony — medytacja trafia do tego konkretnego
+            // programu. Po utworzeniu nawigujemy do edytora z kontekstem programu
+            // (`?program=…`), żeby Back z edytora wracał tutaj, nie do listy programów.
+            // CategoryId parsujemy z string'a (@bind selecta) — przycisk Create jest
+            // disabled dopóki user nie wybierze, więc tu pole zawsze ma poprawny guid.
+            Guid? categoryId = Guid.TryParse(_newCategoryId, out var parsed) ? parsed : null;
+            var (dto, error) = await MeditationSvc.CreateAsync(Id, _newTitle.Trim(), _newDesc.Trim(), categoryId);
+            if (dto is not null)
+            {
+                Nav.NavigateTo($"/meditations/{dto.Id}?program={Id}");
+                return;
+            }
+            _createError = error ?? "Could not create session. Try again.";
+        }
+        finally
+        {
+            _creatingBusy = false;
+        }
     }
 
     private void Open(Guid id) => Nav.NavigateTo($"/meditations/{id}?program={Id}");
@@ -843,6 +870,19 @@
         padding: 9px 12px;
         border-radius: 6px;
         background: var(--color-background-secondary);
+    }
+    /* Błąd HTTP po Create — wyrazisty czerwony banner pod polami formularza,
+       żeby user nie myślał że klik Create nic nie zrobił. Treść jest dynamiczna
+       (kod statusu + body z backendu), więc font-size 13px i line-height
+       trzymają go czytelnym dla dłuższych komunikatów. */
+    .form-error {
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        line-height: 1.4;
+        margin: 0 0 12px;
     }
     .category-empty-hint a { color: var(--color-text-info); text-decoration: none; }
     .category-empty-hint a:hover { text-decoration: underline; }
