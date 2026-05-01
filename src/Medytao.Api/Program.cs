@@ -231,6 +231,9 @@ static async Task SeedUserRolesAsync(AppDbContext db, IConfiguration cfg)
     var changed = false;
     foreach (var entry in section.GetChildren())
     {
+        // Klucze "_*" to umownie dokumentacja w configu (komentarze, przykłady) —
+        // pomijamy zarówno tutaj jak i w ResolveSeededRole na hot-path Login/Register.
+        if (entry.Key.StartsWith('_')) continue;
         var email = entry.Key.ToLowerInvariant();
         var roleStr = entry.Value;
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(roleStr)) continue;
