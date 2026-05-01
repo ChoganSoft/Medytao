@@ -38,9 +38,17 @@ else
                 <span class="status-badge @_meditation.Status.ToLower()">@_meditation.Status</span>
             </div>
             <div class="topbar-actions">
+                @* Publish/Sharing — Draft otwiera modal z wyborem widoczności,
+                   Published otwiera ten sam modal z aktualnymi ustawieniami plus
+                   przyciskiem Unpublish. Modal ten sam dla obu kierunków, mniej
+                   duplikacji UI. *@
                 @if (_meditation.Status == "Draft")
                 {
-                    <button class="btn-secondary" @onclick="Publish">Publish</button>
+                    <button class="btn-secondary" @onclick="OpenSharingModal">Publish</button>
+                }
+                else
+                {
+                    <button class="btn-secondary" @onclick="OpenSharingModal" title="@($"Shared with {_meditation.MinRoleRequired}+")">Sharing</button>
                 }
                 @* Główny przycisk to toggle Play/Pause (z dodatkowym stanem
                    "Resume" gdy sesja jest spauzowana). Stop jest osobnym
@@ -131,6 +139,52 @@ else
             OnPick="HandleAssetPicked"
             OnClose="ClosePicker" />
     }
+
+    @* Sharing modal — wybór MinRoleRequired przy publikacji albo edycja
+       widoczności już-Published sesji. _sharingDraft trzyma wartość edytowanej
+       kopii (string nazwa enum), Confirm wysyła Publish, Cancel zamyka.
+       Dla Published dochodzi przycisk Unpublish (Status → Draft). *@
+    @if (_sharingModalOpen && _meditation is not null)
+    {
+        <div class="modal-backdrop">
+            <div class="modal">
+                <h2>@(_meditation.Status == "Draft" ? "Publish session" : "Sharing settings")</h2>
+                <p class="modal-desc">
+                    @if (_meditation.Status == "Draft")
+                    {
+                        <text>Make this session visible to other users in the Library.</text>
+                    }
+                    else
+                    {
+                        <text>This session is currently published. Update minimum required role or unpublish to hide it.</text>
+                    }
+                </p>
+                <div class="field">
+                    <label>Visible to</label>
+                    <select @bind="_sharingDraft">
+                        <option value="Free">Free and above (everyone)</option>
+                        <option value="Apprentice">Apprentice and above</option>
+                        <option value="Master">Master and above</option>
+                        <option value="Guru">Guru only</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    @if (_meditation.Status == "Published")
+                    {
+                        <button class="btn-secondary" @onclick="UnpublishSession" disabled="@_sharingBusy">
+                            @(_sharingBusy ? "Working…" : "Unpublish")
+                        </button>
+                    }
+                    <div class="modal-actions-right">
+                        <button class="btn-secondary" @onclick="CloseSharingModal" disabled="@_sharingBusy">Cancel</button>
+                        <button class="btn-primary" @onclick="ConfirmPublish" disabled="@_sharingBusy">
+                            @(_sharingBusy ? "Working…" : (_meditation.Status == "Draft" ? "Publish" : "Save"))
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -170,6 +224,13 @@ else
     // Cancel oba są zerowane (Editing=false, Draft="").
     private bool _titleEditing;
     private string _titleDraft = "";
+
+    // Sharing modal — _sharingDraft trzyma wybraną nazwę roli (string, bo
+    // <select> @bind operuje na string). _sharingBusy disabled-uje przyciski
+    // podczas HTTP w locie. Otwarty z Publish/Sharing button-em w topbar.
+    private bool _sharingModalOpen;
+    private string _sharingDraft = "Free";
+    private bool _sharingBusy;
 
     // Łączna długość medytacji liczona z warstw. Per-warstwa końcówkę liczymy
     // jako max(seqEnd, scheduledEnd):
@@ -290,10 +351,57 @@ else
     private void GoBack() =>
         Nav.NavigateTo(_programContextId is { } pid ? $"/programs/{pid}" : "/");
 
-    private async Task Publish()
+    // Sharing flow:
+    //   OpenSharingModal — kopiuje aktualny MinRoleRequired do _sharingDraft,
+    //   żeby modal pokazał obecny stan zarówno dla Draft (gdzie pole jest
+    //   "default Free" mimo że niewidoczne) jak i Published.
+    //   ConfirmPublish — Publish z _sharingDraft. Działa na Draft i Published
+    //   (republish updatuje tylko MinRoleRequired bez ping-ponga).
+    //   UnpublishSession — wywołuje Unpublish, zamyka modal, refetch.
+    private void OpenSharingModal()
     {
-        await MeditationSvc.PublishAsync(Id);
-        _meditation = await MeditationSvc.GetByIdAsync(Id);
+        if (_meditation is null) return;
+        _sharingDraft = string.IsNullOrEmpty(_meditation.MinRoleRequired)
+            ? "Free"
+            : _meditation.MinRoleRequired;
+        _sharingModalOpen = true;
+    }
+
+    private void CloseSharingModal()
+    {
+        _sharingModalOpen = false;
+    }
+
+    private async Task ConfirmPublish()
+    {
+        if (_meditation is null || _sharingBusy) return;
+        _sharingBusy = true;
+        try
+        {
+            await MeditationSvc.PublishAsync(_meditation.Id, _sharingDraft);
+            _meditation = await MeditationSvc.GetByIdAsync(Id);
+            _sharingModalOpen = false;
+        }
+        finally
+        {
+            _sharingBusy = false;
+        }
+    }
+
+    private async Task UnpublishSession()
+    {
+        if (_meditation is null || _sharingBusy) return;
+        _sharingBusy = true;
+        try
+        {
+            await MeditationSvc.UnpublishAsync(_meditation.Id);
+            _meditation = await MeditationSvc.GetByIdAsync(Id);
+            _sharingModalOpen = false;
+        }
+        finally
+        {
+            _sharingBusy = false;
+        }
     }
 
     // Click-to-edit tytułu sesji.
@@ -548,4 +656,36 @@ else
         font-size: 13px; cursor: pointer;
     }
     .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Sharing modal — wzór layoutu z innych modali (page-pages mają własne
+       reguły, ale edytor ich nie dziedziczy, dlatego definiujemy lokalnie).
+       modal-actions-right grupuje Cancel+Save po prawej, Unpublish stoi
+       z lewej (separacja akcji konstruktywnych vs destrukcyjnej). */
+    .modal-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.4);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 100;
+    }
+    .modal {
+        background: var(--color-background-primary);
+        border-radius: 12px; padding: 32px;
+        width: 440px; max-width: calc(100vw - 24px);
+    }
+    .modal h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+    .modal-desc { font-size: 14px; color: var(--color-text-secondary); margin: 0 0 24px; line-height: 1.5; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .field label { font-size: 13px; color: var(--color-text-secondary); }
+    .field select {
+        padding: 9px 12px; border-radius: 6px; font-size: 14px;
+        border: 1px solid var(--color-border-secondary);
+        background: var(--color-background-secondary);
+        color: var(--color-text-primary);
+        appearance: auto; padding-right: 28px;
+    }
+    .modal-actions {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; margin-top: 24px;
+    }
+    .modal-actions-right { display: flex; gap: 8px; margin-left: auto; }
 </style>

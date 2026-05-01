@@ -46,7 +46,8 @@ public class GetMeditationByIdHandler(IMeditationRepository repo, IStorageServic
                 ))
             )),
             m.CategoryId,
-            m.Category?.Name
+            m.Category?.Name,
+            m.MinRoleRequired.ToString()
         );
     }
 }
@@ -63,7 +64,8 @@ public class GetMeditationsByAuthorHandler(IMeditationRepository repo)
             m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
             m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
             m.CategoryId,
-            m.Category?.Name));
+            m.Category?.Name,
+            m.MinRoleRequired.ToString()));
     }
 }
 
@@ -83,6 +85,7 @@ public class GetLibraryHandler(IMeditationRepository repo)
             m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
             m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
             m.CategoryId,
-            m.Category?.Name));
+            m.Category?.Name,
+            m.MinRoleRequired.ToString()));
     }
 }

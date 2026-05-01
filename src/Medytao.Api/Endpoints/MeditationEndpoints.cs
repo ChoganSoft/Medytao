@@ -2,11 +2,23 @@ using System.Security.Claims;
 using MediatR;
 using Medytao.Application.Meditations.Commands;
 using Medytao.Application.Meditations.Queries;
+using Medytao.Domain.Enums;
 
 namespace Medytao.Api.Endpoints;
 
 public static class MeditationEndpoints
 {
+    // Tolerancyjny parser dla MinRoleRequired w body PublishRequest.
+    // Brak/niepoprawna wartość → Free (najmniej restrykcyjna), bezpieczne
+    // domyślne dla "publikuj bez konfiguracji". Case-insensitive.
+    private static UserRole ParseRoleOrFree(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return UserRole.Free;
+        return Enum.TryParse<UserRole>(raw, ignoreCase: true, out var role)
+            ? role
+            : UserRole.Free;
+    }
+
     public static void MapMeditationEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/meditations").WithTags("Meditations");
@@ -50,9 +62,22 @@ public static class MeditationEndpoints
             return Results.Ok(result);
         }).RequireAuthorization("RequireMaster");
 
-        group.MapPost("/{id:guid}/publish", async (Guid id, IMediator mediator) =>
+        // Publish — body przyjmuje MinRoleRequired (string nazwy enum). Brak body
+        // lub niepoprawna wartość → fallback Free (najmniej restrykcyjna widoczność,
+        // bezpieczna dla "publikuj bez konfiguracji"). Powtórne publish na już-Published
+        // sesji zmienia tylko MinRoleRequired (nie potrzeba unpublish/publish ping-pong).
+        group.MapPost("/{id:guid}/publish", async (Guid id, PublishRequest? req, ClaimsPrincipal user, IMediator mediator) =>
         {
-            var result = await mediator.Send(new PublishMeditationCommand(id));
+            var minRole = ParseRoleOrFree(req?.MinRoleRequired);
+            var result = await mediator.Send(new PublishMeditationCommand(id, user.GetUserId(), minRole));
+            return Results.Ok(result);
+        }).RequireAuthorization("RequireMaster");
+
+        // Unpublish — przywraca Status=Draft, sesja znika z biblioteki.
+        // Bez body, bez parametrów (poza id i userem z JWT).
+        group.MapPost("/{id:guid}/unpublish", async (Guid id, ClaimsPrincipal user, IMediator mediator) =>
+        {
+            var result = await mediator.Send(new UnpublishMeditationCommand(id, user.GetUserId()));
             return Results.Ok(result);
         }).RequireAuthorization("RequireMaster");
 
@@ -75,3 +100,4 @@ public static class MeditationEndpoints
 
 public record CreateMeditationRequest(Guid ProgramId, string Title, string? Description, Guid? CategoryId);
 public record UpdateMeditationRequest(string Title, string? Description, int DurationMs);
+public record PublishRequest(string? MinRoleRequired);

@@ -40,7 +40,8 @@ public class GetProgramByIdHandler(IProgramRepository repo)
                 m.Id, m.Title, m.Description, m.DurationMs, m.Status.ToString(), m.CreatedAt,
                 m.Layers.ToDictionary(l => l.Type.ToString(), l => l.Tracks.Count),
                 m.CategoryId,
-                m.Category?.Name));
+                m.Category?.Name,
+                m.MinRoleRequired.ToString()));
 
         return new ProgramDetailDto(p.Id, p.Name, p.Description, p.CreatedAt, meds);
     }
