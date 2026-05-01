@@ -82,11 +82,13 @@ public static class MeditationEndpoints
         }).RequireAuthorization("RequireMaster");
 
         // Duplicate — zwraca DTO nowej medytacji, frontend odświeża listę po wywołaniu.
-        // 404 gdy source nie istnieje, 401 gdy źródło należy do innego usera (handler
-        // rzuca UnauthorizedAccessException → middleware zamapuje na 401).
+        // 404 gdy source nie istnieje, 401 gdy źródło jest cudzą Draft / brak roli
+        // (handler rzuca UnauthorizedAccessException → middleware zamapuje na 401).
+        // UserRole z JWT przekazujemy do handlera — duplikowanie cudzej Published
+        // sesji wymaga roli >= source.MinRoleRequired (te same warunki co library).
         group.MapPost("/{id:guid}/duplicate", async (Guid id, ClaimsPrincipal user, IMediator mediator) =>
         {
-            var result = await mediator.Send(new DuplicateMeditationCommand(id, user.GetUserId()));
+            var result = await mediator.Send(new DuplicateMeditationCommand(id, user.GetUserId(), user.GetUserRole()));
             return result is null ? Results.NotFound() : Results.Created($"/api/v1/meditations/{result.Id}", result);
         }).RequireAuthorization("RequireMaster");
 
