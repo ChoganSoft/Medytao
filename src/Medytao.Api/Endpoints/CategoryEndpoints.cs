@@ -24,6 +24,9 @@ public static class CategoryEndpoints
         // InvalidOperationException, mapujemy na 409 Conflict. Pusta nazwa →
         // 400 Bad Request (ArgumentException). Global handler łapie i tak,
         // ale tu dajemy jawne Results.Conflict dla lepszej narracji.
+        // Tworzenie/usuwanie kategorii — Master+. Free/Apprentice dostają
+        // predefiniowaną dziesiątkę przy rejestracji (auto-seed) i mogą jej
+        // używać do filtrowania, ale nie modyfikują listy.
         group.MapPost("/", async (CreateCategoryRequest req, ClaimsPrincipal user, IMediator mediator) =>
         {
             try
@@ -39,13 +42,13 @@ public static class CategoryEndpoints
             {
                 return Results.BadRequest(ex.Message);
             }
-        });
+        }).RequireAuthorization("RequireMaster");
 
         group.MapDelete("/{id:guid}", async (Guid id, IMediator mediator) =>
         {
             await mediator.Send(new DeleteCategoryCommand(id));
             return Results.NoContent();
-        });
+        }).RequireAuthorization("RequireMaster");
     }
 }
 

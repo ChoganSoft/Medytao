@@ -133,4 +133,8 @@ public record CategorySummaryDto(
 );
 
 // ── Auth ───────────────────────────────────────────────
-public record AuthTokenDto(string AccessToken, DateTimeOffset ExpiresAt, string DisplayName);
+// Role string: nazwa wartości UserRole z domeny (Free/Apprentice/Master/Guru).
+// Frontend dekoduje JWT też i tak czyta to samo z claim ClaimTypes.Role,
+// ale zawarcie w DTO oszczędza JWT-decoder przy świeżym tokenie zwróconym
+// z login/register (frontend od razu wie jaką rolę dostał user).
+public record AuthTokenDto(string AccessToken, DateTimeOffset ExpiresAt, string DisplayName, string Role);

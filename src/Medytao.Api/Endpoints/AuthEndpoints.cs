@@ -95,7 +95,10 @@ public static class AuthEndpoints
             claims: [
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Name, user.DisplayName)
+                new Claim(ClaimTypes.Name, user.DisplayName),
+                // ClaimTypes.Role — standardowa nazwa, ASP.NET Core
+                // [Authorize(Roles="...")] i policy assertions szukają właśnie tu.
+                new Claim(ClaimTypes.Role, user.Role.ToString())
             ],
             expires: expires.UtcDateTime,
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
@@ -104,7 +107,8 @@ public static class AuthEndpoints
         return new AuthTokenDto(
             new JwtSecurityTokenHandler().WriteToken(token),
             expires,
-            user.DisplayName
+            user.DisplayName,
+            user.Role.ToString()
         );
     }
 }

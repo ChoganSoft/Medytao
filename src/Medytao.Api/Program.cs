@@ -12,6 +12,7 @@ using Medytao.Api.Middleware;
 using Medytao.Api.SignalR;
 using Medytao.Application.Meditations.Commands;
 using Medytao.Domain.Entities;
+using Medytao.Domain.Enums;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,7 +67,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+// Policies RBAC — hierarchiczne (Guru jest też Master). Logika "co najmniej rola X"
+// żyje w ClaimsPrincipalExtensions.IsAtLeast; tu tylko nazywamy policy by można je
+// wpinać przez .RequireAuthorization("RequireMaster") na endpointach.
+//
+// Endpoints które chcą "Master+" — używają RequireMaster.
+// Endpoints które wymagają striktnie Guru — RequireGuru.
+// Mieszane przypadki (np. "endpoint OK dla Master, ale gdy w body StartAtMs != null
+// to wymaga Guru") obsługujemy ręcznie w handlerze/endpoint-lambda, bo policy nie
+// widzi body requestu.
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("RequireMaster", p => p.RequireAssertion(ctx => ctx.User.IsAtLeast(UserRole.Master)))
+    .AddPolicy("RequireGuru", p => p.RequireAssertion(ctx => ctx.User.IsAtLeast(UserRole.Guru)));
 builder.Services.AddSignalR();
 builder.Services.AddOpenApi();
 
@@ -88,6 +100,11 @@ if (app.Environment.IsDevelopment())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
 
+    // EnsureCreated nie dodaje brakujących kolumn do istniejących tabel
+    // (to nie jest migracja). Dla istniejących baz dev manualnie ALTER TABLE,
+    // idempotentnie. Po przejściu na formalne migracje EF tę funkcję skasujemy.
+    await EnsureUserRoleColumnAsync(db);
+
     // Migracja danych dla feature'a programów: userzy zarejestrowani przed
     // wprowadzeniem programów nie mają żadnego programu. Tworzymy im domyślny
     // ("My meditations") i wpinamy do niego ich wszystkie medytacje. Bez tego
@@ -102,6 +119,11 @@ if (app.Environment.IsDevelopment())
     // Analogicznie dla kategorii — userzy bez żadnej kategorii dostają
     // predefiniowaną dziesiątkę. Idempotentne (sprawdza Categories.Any()).
     await SeedDefaultCategoriesAsync(db);
+
+    // Promocja userów do wyższych ról na podstawie konfiguracji w appsettings.
+    // Idempotentne — można odpalać na każdym starcie. Userzy nieznajdujący się
+    // w mapping pozostają z bieżącą rolą (default Free dla świeżo zarejestrowanych).
+    await SeedUserRolesAsync(db, app.Configuration);
 
     app.MapOpenApi();
     app.MapScalarApiReference();
@@ -150,6 +172,59 @@ static async Task SeedDefaultCategoriesAsync(AppDbContext db)
     }
 
     await db.SaveChangesAsync();
+}
+
+// Idempotentne dodanie kolumny Role do tabeli Users dla istniejących baz.
+// EnsureCreated tylko CREATE TABLE, ale nie ALTER. Skasujemy gdy przejdziemy
+// na formalne migracje EF. SQL Server-specific (sys.columns / sys.tables).
+static async Task EnsureUserRoleColumnAsync(AppDbContext db)
+{
+    const string sql = """
+        IF EXISTS (SELECT 1 FROM sys.tables WHERE name = N'Users')
+            AND NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE Name = N'Role' AND Object_ID = Object_ID(N'Users')
+            )
+        BEGIN
+            ALTER TABLE Users ADD Role INT NOT NULL DEFAULT 0;
+        END
+    """;
+    await db.Database.ExecuteSqlRawAsync(sql);
+}
+
+// Promocja userów do ról zdefiniowanych w appsettings:
+//   "RoleSeed": { "user@example.com": "Master", "admin@example.com": "Guru" }
+// Idempotentne — jeśli user nie istnieje w bazie (jeszcze się nie zarejestrował),
+// po prostu pomijamy go. Przy każdym kolejnym starcie aplikacji próba zostanie
+// powtórzona, więc gdy user się zarejestruje, dostanie podbicie rangi automatycznie.
+// Niezdefiniowane / nieznane wartości stringa są ignorowane (log warn) — bezpiecznie.
+static async Task SeedUserRolesAsync(AppDbContext db, IConfiguration cfg)
+{
+    var section = cfg.GetSection("RoleSeed");
+    if (!section.Exists()) return;
+
+    var changed = false;
+    foreach (var entry in section.GetChildren())
+    {
+        var email = entry.Key.ToLowerInvariant();
+        var roleStr = entry.Value;
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(roleStr)) continue;
+        if (!Enum.TryParse<UserRole>(roleStr, ignoreCase: false, out var role))
+        {
+            Console.WriteLine($"[RoleSeed] Unknown role '{roleStr}' for {email}; skipping.");
+            continue;
+        }
+
+        var user = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .FirstOrDefaultAsync(db.Users, u => u.Email == email);
+        if (user is null) continue;
+        if (user.Role == role) continue;
+
+        user.Role = role;
+        changed = true;
+    }
+
+    if (changed) await db.SaveChangesAsync();
 }
 
 app.UseExceptionHandler(new ExceptionHandlerOptions

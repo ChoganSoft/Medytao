@@ -24,23 +24,27 @@ public static class ProgramEndpoints
             return Results.Ok(result);
         });
 
+        // Tworzenie/edycja/usuwanie programów wymaga Master+. Free i Apprentice
+        // dostają domyślny program przy rejestracji (auto-seed) i to wystarczy
+        // dla ich roli (przeglądanie gotowych sesji bez tworzenia własnych
+        // folderów organizacyjnych).
         group.MapPost("/", async (CreateProgramRequest req, ClaimsPrincipal user, IMediator mediator) =>
         {
             var result = await mediator.Send(new CreateProgramCommand(user.GetUserId(), req.Name, req.Description));
             return Results.Created($"/api/v1/programs/{result.Id}", result);
-        });
+        }).RequireAuthorization("RequireMaster");
 
         group.MapPut("/{id:guid}", async (Guid id, UpdateProgramRequest req, IMediator mediator) =>
         {
             var result = await mediator.Send(new UpdateProgramCommand(id, req.Name, req.Description));
             return Results.Ok(result);
-        });
+        }).RequireAuthorization("RequireMaster");
 
         group.MapDelete("/{id:guid}", async (Guid id, IMediator mediator) =>
         {
             await mediator.Send(new DeleteProgramCommand(id));
             return Results.NoContent();
-        });
+        }).RequireAuthorization("RequireMaster");
     }
 }
 

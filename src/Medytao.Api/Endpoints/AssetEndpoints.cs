@@ -38,6 +38,9 @@ public static class AssetEndpoints
             return Results.Ok(dtos);
         });
 
+        // Upload assetów — Master+. Free/Apprentice nie tworzą sesji, więc
+        // nie potrzebują wgrywać własnych plików. Odsłuch gotowych sesji
+        // operuje na sharowanych assetach (OwnerId = null lub IsShared=true).
         group.MapPost("/upload", async (
             HttpRequest request,
             ClaimsPrincipal user,
@@ -73,7 +76,7 @@ public static class AssetEndpoints
                 tags));
 
             return Results.Created($"/api/v1/assets/{result.Id}", result);
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().RequireAuthorization("RequireMaster");
 
         // PATCH /assets/{id}/duration — klient zgłasza wykryte durationMs
         // (lazy-fetch przy startSession lub auto-detect przy uploadzie).
@@ -91,7 +94,8 @@ public static class AssetEndpoints
 
         // PATCH /assets/{id}/sharing — autor zmienia widoczność swojego zasobu.
         // Body: { "isShared": true|false }. Zwraca zaktualizowany AssetDto, żeby
-        // UI mogło bez refetcha podmienić wpis na liście.
+        // UI mogło bez refetcha podmienić wpis na liście. Master+ — Free/Apprentice
+        // nie posiadają własnych assetów (upload jest dla nich zablokowany).
         group.MapPatch("/{id:guid}/sharing", async (
             Guid id,
             SetSharingRequest body,
@@ -100,13 +104,13 @@ public static class AssetEndpoints
         {
             var dto = await mediator.Send(new SetAssetSharingCommand(id, user.GetUserId(), body.IsShared));
             return Results.Ok(dto);
-        });
+        }).RequireAuthorization("RequireMaster");
 
         group.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal user, IMediator mediator) =>
         {
             await mediator.Send(new DeleteAssetCommand(id, user.GetUserId()));
             return Results.NoContent();
-        });
+        }).RequireAuthorization("RequireMaster");
     }
 
     // Lokalny request DTO — body PATCH-a. Nie idzie do Shared, bo to detal
