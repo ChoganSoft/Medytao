@@ -30,9 +30,9 @@ public static class MeditationEndpoints
             return Results.Created($"/api/v1/meditations/{result.Id}", result);
         });
 
-        group.MapPut("/{id:guid}", async (Guid id, UpdateMeditationRequest req, IMediator mediator) =>
+        group.MapPut("/{id:guid}", async (Guid id, UpdateMeditationRequest req, ClaimsPrincipal user, IMediator mediator) =>
         {
-            var result = await mediator.Send(new UpdateMeditationCommand(id, req.Title, req.Description, req.DurationMs));
+            var result = await mediator.Send(new UpdateMeditationCommand(id, user.GetUserId(), req.Title, req.Description, req.DurationMs));
             return Results.Ok(result);
         });
 

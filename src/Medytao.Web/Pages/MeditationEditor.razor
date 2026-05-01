@@ -16,7 +16,25 @@ else
         <div class="editor-topbar">
             <button class="back-btn" @onclick="GoBack">← Back</button>
             <div class="editor-title-wrap">
-                <span class="editor-title">@_meditation.Title</span>
+                @* Click-to-edit tytułu sesji. Span pokazuje wartość, klik
+                   otwiera input z bieżącą wartością. Enter lub blur zapisuje,
+                   Escape anuluje. Pusty tytuł po trim → no-op (zostaje
+                   poprzednia wartość, tryb edycji się zamyka). *@
+                @if (_titleEditing)
+                {
+                    <input class="editor-title-input"
+                           value="@_titleDraft"
+                           @oninput="e => _titleDraft = e.Value?.ToString() ?? string.Empty"
+                           @onblur="SaveTitle"
+                           @onkeydown="OnTitleKeyDown"
+                           autofocus />
+                }
+                else
+                {
+                    <span class="editor-title editable"
+                          @onclick="BeginTitleEdit"
+                          title="Click to edit">@_meditation.Title</span>
+                }
                 <span class="status-badge @_meditation.Status.ToLower()">@_meditation.Status</span>
             </div>
             <div class="topbar-actions">
@@ -147,6 +165,12 @@ else
     // Czyszczone w OnSeekRelease (gdy user puści przycisk myszy).
     private double? _seekDragMs;
 
+    // Click-to-edit tytułu. _titleEditing = true → renderujemy input zamiast
+    // span, _titleDraft trzyma bieżącą wartość edytowanej kopii. Po Save lub
+    // Cancel oba są zerowane (Editing=false, Draft="").
+    private bool _titleEditing;
+    private string _titleDraft = "";
+
     // Łączna długość medytacji liczona z warstw. Per-warstwa końcówkę liczymy
     // jako max(seqEnd, scheduledEnd):
     //   - seqEnd = suma duration*loops dla tracków BEZ StartAtMs (sequenced
@@ -260,6 +284,60 @@ else
     {
         await MeditationSvc.PublishAsync(Id);
         _meditation = await MeditationSvc.GetByIdAsync(Id);
+    }
+
+    // Click-to-edit tytułu sesji.
+    //
+    // BeginTitleEdit: kopiujemy aktualny tytuł do _titleDraft (input edytuje
+    // kopię, nie oryginał — żeby Escape mógł porzucić zmiany bez Refetch).
+    //
+    // SaveTitle: trim + walidacja "nieperformatywna" (pusto → no-op, identyczne
+    // → no-op) zanim strzelimy HTTP. Refetch pełnego DTO po sukcesie zamiast
+    // mutacji lokalnej, bo backend aktualizuje też UpdatedAt i mogą się zmienić
+    // pochodne pola. Idempotentne na re-entry przez @onblur w trakcie zapisu —
+    // _titleEditing sprawdzamy na początku.
+    //
+    // CancelTitleEdit: bez HTTP, tylko zamyka tryb edycji.
+    private void BeginTitleEdit()
+    {
+        if (_meditation is null || _titleEditing) return;
+        _titleDraft = _meditation.Title;
+        _titleEditing = true;
+    }
+
+    private async Task SaveTitle()
+    {
+        if (_meditation is null || !_titleEditing) return;
+        _titleEditing = false;
+        var trimmed = _titleDraft.Trim();
+        _titleDraft = "";
+        if (string.IsNullOrEmpty(trimmed) || trimmed == _meditation.Title) return;
+
+        // DurationMs przekazujemy z bieżącego DTO — backend nadpisuje całe
+        // pole, więc bez tego stracilibyśmy prepocomputed wartość.
+        var updated = await MeditationSvc.UpdateAsync(_meditation.Id, trimmed, _meditation.Description, _meditation.DurationMs);
+        if (updated is not null)
+        {
+            _meditation = await MeditationSvc.GetByIdAsync(Id);
+        }
+    }
+
+    private void CancelTitleEdit()
+    {
+        _titleEditing = false;
+        _titleDraft = "";
+    }
+
+    private async Task OnTitleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SaveTitle();
+        }
+        else if (e.Key == "Escape")
+        {
+            CancelTitleEdit();
+        }
     }
 
     // Trzy stany toggle'a: gra → pauza, spauzowane → resume, spoczynek → start.
@@ -399,6 +477,32 @@ else
 
     .editor-title-wrap { display: flex; align-items: center; gap: 10px; flex: 1; }
     .editor-title { font-size: 16px; font-weight: 500; }
+    /* Klasa .editable dorzucana tylko na "spanie" trybu wyświetlania —
+       hover pokazuje że tytuł jest klikalny (delikatne tło + kursor text). */
+    .editor-title.editable {
+        cursor: text;
+        padding: 2px 6px;
+        border-radius: 4px;
+        transition: background 0.1s;
+    }
+    .editor-title.editable:hover {
+        background: var(--color-background-secondary);
+    }
+    /* Input dziedziczy wymiary po editor-title (16px / 500), żeby przejście
+       span → input było bezszwowe (brak skoku layoutu). Padding/border idą
+       w ramach tego samego box-sizingu co padding spana w .editable. */
+    .editor-title-input {
+        font-size: 16px;
+        font-weight: 500;
+        font-family: inherit;
+        padding: 2px 6px;
+        border: 1px solid var(--color-border-info, #4a90e2);
+        border-radius: 4px;
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+        outline: none;
+        min-width: 220px;
+    }
 
     .status-badge {
         font-size: 11px; font-weight: 500;
