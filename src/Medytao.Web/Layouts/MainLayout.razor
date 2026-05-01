@@ -95,16 +95,14 @@
             </button>
             <span class="top-bar-breadcrumb">@CurrentSectionName()</span>
             <div class="top-bar-spacer"></div>
-            @* Powitanie zalogowanego usera w formacie "Hello, Role Name".
-               Renderowane tylko gdy mamy DisplayName (czyli token ważny i
-               zinicjalizowany). Pole CurrentRole ma wartość Free dla
-               niezalogowanych, ale DisplayName=null jest jednoznacznym sygnałem.
-               Brak banera na stronach Login/Register (i tak nie ma tokena). *@
+            @* Powitanie zalogowanego usera: "Hello, Name" + osobna plakietka
+               z rolą (pill shape, kolor zależnie od roli). Renderowane tylko
+               gdy mamy DisplayName (token ważny i zinicjalizowany). Brak
+               banera na stronach Login/Register (te używają EmptyLayout). *@
             @if (!string.IsNullOrEmpty(Auth.CurrentDisplayName))
             {
-                <span class="hello-banner">
-                    Hello, <span class="hello-role">@Auth.CurrentRole</span> @Auth.CurrentDisplayName
-                </span>
+                <span class="hello-banner">Hello, @Auth.CurrentDisplayName</span>
+                <span class="role-badge role-@Auth.CurrentRole.ToString().ToLowerInvariant()">@Auth.CurrentRole</span>
             }
             <button class="theme-toggle" @onclick="ToggleTheme"
                     title="@(Theme.IsDark ? "Switch to light theme" : "Switch to dark theme")">
@@ -459,26 +457,60 @@
     }
     .top-bar-spacer { flex: 1; }
 
-    /* Powitanie zalogowanego usera — dyskretne, font 13px, lekka separacja
-       od theme-toggle przez gap rodzica. Rola wyróżniona kolorem akcentu
-       (gold), żeby user widział na co Admin go promował. */
+    /* Powitanie zalogowanego usera — "Hello, Name" plus osobna plakietka
+       z rolą obok. Font 14px (większy niż wcześniejsze 13px) dla lepszej
+       czytelności w nagłówku. */
     .hello-banner {
-        font-size: 13px;
-        color: var(--color-text-secondary);
+        font-size: 14px;
+        color: var(--color-text-primary);
         white-space: nowrap;
     }
-    .hello-role {
-        color: var(--color-text-info);
-        font-weight: 500;
+
+    /* Plakietka z rolą — wzór wzięty ze status-badge na karcie sesji
+       (avatar.card-status-badge). Pill-shape, uppercase, drobny font,
+       box-shadow dla efektu "naklejki". Kolor zależnie od roli — Free
+       neutralny szary, Apprentice info, Master gold (akcent), Guru success,
+       Admin danger (najwyższa, wyróżniająca się rola). */
+    .role-badge {
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
     }
-    /* Mobile — na 360px viewport long banner ("Hello, Apprentice Catherine
-       Smith") rozsadziłby topbar. Skracamy fontem, ucinamy text-overflow. */
+    .role-free {
+        background: var(--color-background-secondary);
+        color: var(--color-text-tertiary);
+    }
+    .role-apprentice {
+        background: var(--color-background-info);
+        color: var(--color-text-info);
+    }
+    .role-master {
+        background: var(--color-background-warning);
+        color: var(--color-text-warning);
+    }
+    .role-guru {
+        background: var(--color-background-success);
+        color: var(--color-text-success);
+    }
+    .role-admin {
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+    }
+
+    /* Mobile — na 360px viewport long banner ("Hello, Catherine Smith") plus
+       plakietka rozsadzą topbar. Banner skracamy fontem i text-overflow,
+       plakietka zostaje w pełnym rozmiarze (uppercase 10px to i tak mało). */
     @@media (max-width: 768px) {
         .hello-banner {
             font-size: 12px;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 50vw;
+            max-width: 40vw;
         }
     }
 
